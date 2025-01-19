@@ -1,0 +1,4783 @@
+---
+title: "Making Euchre Bids With Machine Learning"
+author: "Sam Hinnenkamp"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 2
+    toc_float:
+      collapsed: yes
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+\
+
+# Abstract
+
+Euchre is a trick-taking card game that is played by 4 players on 2
+teams. For each round of Euchre, each player gets dealt 5 cards that range from 9 to ace. Once the cards are dealt, the players determine what the
+trump suit should be, depending on the cards in hand. A nine (weakest
+rank) of the trump suit is more powerful than the ace (strongest rank)
+of a non-trump suit. When a player is selecting trump, the goal is for
+their team to win the majority of 5 tricks.
+
+When deciding to bid trump, there is no straightforward process for
+doing so. Therefore, this project will determine what factors contribute
+to creating a good hand that is worthy to bid on. Since there are no
+datasets online that will achieve this goal, 300,000 Euchre rounds were
+simulated Monte Carlo style. Information about the hand and the call
+that should have been made based on the results have been recorded.
+Multiclass machine learning algorithms will be used to determine if a suit in hand should be passed on, bid trump, or be bid and played
+alone.
+
+\
+
+# How to play Euchre
+
+Because there are slightly different versions of Euchre, this is how
+Euchre will be played in this simulation.
+
+-   There is no farming so no players can take cards that are buried.
+
+-   Stick the dealer will be enforced which means the dealer must bid
+    trump if the other 3 players pass.
+
+-   Loners will start to the left of the dealer, not starting left of
+    the player who made the bid.
+
+-   Benny is not played.
+
+-   Canadian Loner is not played.
+
+\
+
+### Part 1: Dealing
+
+The game starts with 4 players (two players on each team). The players
+sit at a square table and the members of each team face each other. In a
+1st person perspective, I would be at the south part of the table. My
+partner would be at the north part. The members of the opposing team
+would sit to the left and right of me. Each player gets dealt 5 cards
+that can take the value ace, king, queen, jack, ten, or nine. Nobody can
+see anyone’s cards. Three cards will not be seen for that specific round
+and one card will be turned up in the center of the table. Each player
+takes turns being the dealer.
+
+\
+
+### Part 2: Deciding to pick up the turned-up card
+
+Going in clockwise direction, starting with the player sitting left of
+the dealer, each player will decide whether to pass or make the dealer
+pick up the turned up card. If that card gets picked up, the dealer will
+have to include it in their hand and have to discard a weaker card in
+their hand. The suit of the turned up card would become trump for that round. If the first 3 players pass, the decision goes to the dealer. They can pick up the card or pass. If they pass, the card is turned down and will not be used for that round. That suit would then be unable to be bid trump for that round. 
+
+**TLDR. Each player can decide to make the suit of the turned up card trump and that is it for this phase. If all players agree to not bid the suit trump, they can decide on one of the three other suits.**
+
+It is important to know that a player can opt to play the round alone
+without the help of their partner. If they win all 5 tricks, their team
+can win a lot more points. A player can announce that they are going
+alone when they order trump.
+
+\
+
+### Part 2.5. Deciding Trump
+
+This step occurs if the turned up card is not picked up.
+
+Going in clockwise direction, starting with the player sitting left of
+the dealer, each player will decide on which suit to make trump for that
+round. They can choose any suit, except for the suit that was recently
+turned down. If a player has a lot of cards of the same suit, they can
+opt to make that suit trump. If the first 3 players pass on bidding
+trump, the decision goes to the dealer who then is required to bid trump.
+Even if they have a bad hand, they have to choose a suit to be trump. *However, some games don't play with this rule. In that case, if everyone passes, the cards get redealt and the entire bidding process gets repeated. It will keep repeating until someone bids trump.* 
+
+Again, a player can announce if they will be playing the hand alone when
+they choose a suit to be trump.
+
+**Parts 2 and 2.5 are what this research is based on. Part 3 (specified below) is not part of this research, but is hard-coded for the simulation. Furthermore, individual models will be built for parts 2 and 2.5. The best model for part 2 will have no influence on the best model for part 2.5 and vice versa.**
+
+**An important caveat to know that unlike in the real game, the analyzed hand has total control of what suit to bid trump on. In most cases, the analyzed hand will not have the opportunity to bid trump because someone already did. For the sake of this research, the analyzed hand has total control because it makes the target variable easier to interpret.**
+
+\
+
+### Part 3. Playing cards
+
+Starting with the player left of the dealer, in clockwise order, each
+player takes one card from their hand and plays it on the table. The
+suit of the first card that gets played is the “led suit.” The led suit
+can be a trump suit or a non-trump suit. Every player must play a card
+of the led suit if they have a card of that suit in hand. If a player
+does not have that suit, they can choose to play a trump card on it to try
+to win the trick (if the led suit isn't a trump card). If possible, players can also play a "loser card"
+(low-value, off-suit card) if they don't have the led suit in hand. This
+is usually done if there’s no chance they can win that trick with any of
+the cards in hand, or if their partner is already guaranteed to win the
+trick.
+
+The player that puts the highest value card on the table wins the trick.
+The winning card must either be of the led suit (if no trump cards got
+played) or the most powerful trump card played. A high-rank, non-trump
+card that is a non-led suit is useless and carries as much value as a
+low-rank, non-trump card that is a non-led suit. The winner of the
+previous series goes first in the next trick-taking series (if there's
+cards left). This process continues for all 5 trick-taking series that
+get played.
+
+Once all cards are played, the round is over and the entire process
+repeats, starting from part 1, if neither team has a winning score yet.
+
+\
+
+### Scoring
+
+If the team that chooses trump wins 3 or 4 tricks, they win 1 point,
+regardless of if a member went alone or not.
+
+If the team that chooses trump wins all 5 tricks, they win 2 points.
+This happens when both members play the round.
+
+If the team that chooses trump wins all 5 tricks and only one player from
+the team plays that round, they win 4 points.
+
+If the team that chooses trump wins less than 3 tricks, the opposing
+team wins 2 points (so it’s important to be careful when bidding trump
+since it's risky).
+
+The first team that wins at least 10 points wins the game.
+
+\
+
+### Card power hierarchy
+
+For this scenario, let’s assume that hearts are trump and clubs are led for a series. Starting from strongest to weakest, here are the card values for this specific series:
+
+**Jack of hearts** (also known as Right Bower)
+
+**Jack of diamonds** (also known as Left Bower) – Jack of the non-trump suit
+that is same color as the trump suit. It is not a diamond, but a heart
+for all rounds that hearts are trump.
+
+**Ace of hearts**
+
+**King of hearts**
+
+**Queen of hearts**
+
+**Ten of hearts**
+
+**Nine of hearts**
+
+**Ace of clubs**
+
+**King of clubs**
+
+**Queen of clubs**
+
+**Jack of clubs**
+
+**Ten of clubs**
+
+**Nine of clubs**
+
+**Every other card not mentioned above** 
+
+\
+
+# How Python Simulation made Euchre games
+
+## Baseline bidding method
+
+For this project, south has the sole ability to bid trump for a given
+suit. This is not the case in real life, but for the sake of comparing
+results, south will have the full option of bidding trump.
+
+Here is how the default selection method chooses trump:
+
+When a card gets turned up at the beginning of the round, the summary data for that suit gets analyzed using the logic below. **If it meets the specified criteria, it is bid trump.**
+
+If that card gets turned down, the strongest suit (the suit with the
+highest calculated strength) is used and gets analyzed.
+
+\
+
+The logic used for bidding on the turned up suit is similar to bidding
+on the other 3 suits. The logic is provided below.
+
+**GO ALONE if the hand satisfies these conditions:**
+
+-   There are 4 or more trump cards of a certain suit and the Left or
+    Right Bower is present in hand
+
+-   OR There are 3 or more trump cards of a certain suit, the Left or
+    Right Bower is present in hand, and the non-trump cards are either
+    king or ace rank
+
+-   AND An opponent will not be picking up a jack
+
+**ORDER TRUMP if the hand satisfies these conditions:**
+
+-   There are at least 2 trump cards in hand, the Right Bower is
+    present, and there are at least 2 non-trump cards of king or ace rank
+
+-   OR There are at least 3 trump cards with the Right Bower present
+
+-   OR There are at least 4 trump cards present
+
+**Otherwise — PASS**
+
+\
+
+## Determining the correct call based on simulation results
+
+For each round of Euchre simulated, the simulation records how many
+tricks are won by south (the player analyzed) and the total tricks won
+by the player’s team. If prompted, the simulation runs the scenario of
+south playing the hand alone and counts the number of tricks south wins
+while going alone.
+
+-   If the total number of tricks won by the team is less than 3, or the
+    south player wins less than 2 tricks while playing with the partner
+    and less than 2 tricks while going alone, the correct call is set to
+    **PASS**.
+
+-   If the total number of tricks won by the team is at least 3 AND
+    either south is responsible for winning at least 1 trick while
+    playing the hand with their partner and at least 2 while playing alone OR
+    south is responsible for winning at least 2 tricks while playing
+    with their partner and at least 1 while playing alone, the correct call is set to **ORDER TRUMP**.
+
+-   If south wins all 5 tricks while going alone OR south wins
+    4 tricks without the Right Bower or with 4 trump cards in hand AND
+    does not receive any help from their partner AND an opponent does
+    not pick up a jack, the correct call is set to **ORDER TRUMP ALONE**. 
+    
+\
+
+## Process logic for playing cards with all 4 players
+
+#### First
+
+-   If the Right Bower is in hand, **play the Right Bower**
+
+-   Else if the hand has the expected strongest trump card that hasn’t
+    been played yet, **lead with that card**
+
+-   Else if at least 4 trump cards have been played and there are no
+    non-trump aces in hand, but there are trump cards in hand, **lead with the strongest available trump card**
+
+-   Else if the partner made the bid and there are no non-trump aces in hand, but
+    there are trump cards in hand, **lead with the strongest available trump card**
+
+-   Otherwise, **lead with the strongest available non-trump card**
+
+#### Second
+
+-   If the second player has a card of the suit that was led,
+    **they must play it**
+    -   If the second player has a card stronger than the first card,
+        **play the strongest available card of the led suit**
+    -   Otherwise, **play the weakest available card of the led suit**
+-   If the second player has trump cards (excluding the expected
+    strongest card that hasn’t been played), **play those trump cards**
+    -   If the second player made the bid and there are mid-value trump cards (queen, king, or ace) in hand, **play the lowest available trump card from that list**
+    -   Otherwise, **play that highest available trump card that is not the expected strongest card**
+-   Else **play the weakest card. Ideally, play a lower-value card of a suit that is the only card of that suit in hand**
+
+#### Third
+
+-   If the third player has a card of the suit that was led, **they must play it**
+    -   If the third player has a card of the led suit that is stronger than the first 2
+        played cards and the partner is not guaranteed to win the trick,
+        **play the strongest available card of the led suit**
+    -   Otherwise, **play the weakest available card of the led suit**
+-   Else if the third player has a trump card and the first player’s
+    card is not currently winning or if the first card is not a
+    non-trump ace, **play a trump card (preferably a mid-value trump card if there’s one available, or the weakest available trump card)**
+-   Else **play the weakest card. Ideally, play a lower-value card of a suit that is the only card of that suit in hand**
+
+#### Fourth
+
+-   If the fourth player has a card of the suit that was led, **they must play it**
+    -   If the fourth player has a card of the led suit that can win the
+    trick that is currently not being won by the fourth player’s team,
+    **play the weakest available card of the led suit that can win the trick**
+    -   Otherwise, **play the weakest available card of the led suit**
+
+-   Else if the fourth player has a trump card that can win a trick that is currently not being won by the fourth player’s team, **play the weakest available trump card that can win the fourth player the trick**
+
+-   Else **play the weakest card. Ideally, play a lower-value card of a suit that is the only card of that suit in hand**
+
+\
+
+## Process logic for playing cards when a player is going alone
+
+#### First
+
+-   If the Right Bower is present, **play the Right Bower** (fishes for trump
+    cards and guarantees a free trick)
+
+-   Else if all the cards stronger than the strongest trump card in hand
+    have been played, **play the strongest available trump card in hand** (also
+    fishes for trump and guarantees a free trick)
+
+-   Else if at least 3 total trump cards have been played and the
+    strongest card in hand is a trump and there are no non-trump aces in hand,
+    **play the strongest available trump card in hand**
+
+-   Else **play the strongest non-trump card in hand**
+
+#### Second
+
+-   If the second player has a card in hand of the suit that was led,
+    **play a card of that suit**
+    -   If the second player has a card of the led suit that is stronger than the first
+        card, **play the strongest available card of the led suit**
+    -   Otherwise, **play the weakest available card of the led suit**
+-   Else if the second player has trump cards (excluding the expected strongest card), and would not be trumping a partner’s played ace,
+    **play a trump card**
+    -   If the first player made the bid, win the trick by **playing the weakest available trump card**
+    -   Otherwise, **play a strong trump card** (but not the expected
+        strongest card)
+-   Else **play the lowest value card in hand**
+
+#### Third
+
+-   If the third player has a card of the suit that was led, **play a card of that suit**
+    -   If the player has a card of the led suit that can win the trick that otherwise would not be won by the team, **play the weakest available card of the led suit that would win the trick**
+    -   Otherwise, **play the weakest available card of the led suit**
+
+-   Else If the third player has a trump card that would win the trick for the team that otherwise would not be won, **play the weakest available trump card that would win the trick**
+
+-   Else **play the lowest value card in hand**
+
+\
+
+# Machine Learning Tactic
+
+There will be machine learning models that get tested on each of the
+two parts of the bidding process. There will be models built on whether
+the turned up card gets picked up. The modeling process will be repeated
+on if the best suit in hand should be bid trump in the scenario the
+turned up card gets turned down.
+
+\
+
+# Libraries
+
+```{r, message=FALSE, warning=FALSE}
+library(dplyr)
+library(ggplot2)
+library(rms)
+library(fastDummies)
+library(ROCR)
+library(rpart)
+library(randomForest)
+library(kableExtra)
+library(tidytext)
+library(nnet)
+library(FNN)
+library(caret)
+library(mda)
+library(stringr)
+```
+
+\
+
+# Data Dictionary
+
+When the datasets were made, they include the following columns:
+
+**Suit** - Suit that gets selected as trump for that round - *will remove
+due to no predictability.*
+
+**Right_Bower** - Indicator that the most powerful card is in the hand.
+This guarantees 1 trick. This card is the jack of the trump suit.
+
+**Left_Bower** - Indicator that the second most powerful card is in the
+hand. This card is the jack of the suit that is the same color as the
+trump suit (jack of diamonds is the Left Bower if hearts are trump).
+
+**TAce** - Indicator that the 3rd most powerful card is in the hand.
+This card is the ace of the trump suit.
+
+**TKing** - Indicator that the 4th most powerful card is in the hand.
+This card is the king of the trump suit.
+
+**TQueen** - Indicator that the 5th most powerful card is in the hand.
+This card is the queen of the trump suit.
+
+**TTen** - Indicator that the 6th most powerful card is in the hand.
+This card is the ten of the trump suit.
+
+**TNine** - Indicator that the 7th most powerful card is in the hand.
+This card is the nine of the trump suit.
+
+**Ace_count** - Counts the number of non-trump ace cards in hand.
+
+**King_count** - Counts the number of non-trump king cards in hand.
+
+**Queen_count** - Counts the number of non-trump queen cards in hand.
+
+**Jack_count** - Counts the number of non-trump jack cards in hand.
+These jack cards are a different color than the trump suit.
+
+**Ten_count** - Counts the number of non-trump ten cards in hand.
+
+**Nine_count** - Counts the number of non-trump nine cards in hand.
+
+**Count_Trump** - Counts the number of cards in hand that are the trump
+suit.
+
+**Strength** - An algorithm to calculate the strength of hand. *Will
+remove due to potential multicollinearity and difficulty interpreting in
+real-life Euchre game.*
+
+**Non_Trump_Suit_Count** - Counts the total number of different suits in
+hand, excluding the trump suit.
+
+**Non_Trump_Turned_Down_Color_Ind** - Indicator for if the trump suit
+selected is the same color of the suit that was turned up and passed on
+being trump.
+
+**Start_Order** - The order in which the analyzed player starts in the
+first trick-taking series in a round. *Will get removed due to
+Broad_Start_Order being a simpler variable that can process loners better.*
+
+**Dealer** - Indicator for if the analyzed player was the dealer for the
+round.
+
+**Strongest_Card** - Value of the strongest card in hand when trump is
+selected.
+
+**Broad_Start_Order** - A more broad description of when the analyzed
+player starts in the first trick-taking series in a round. It has the
+following values: First (when the starting order is 1), Middle (when the
+starting order is 2 or 3), or Last (when the starting order is 4).
+
+**ind_picked_up** - Indicates what card (if any) the analyzed player
+picks up.
+
+**p_picked_up** - Indicates what card (if any) the analyzed player's
+partner picks up.
+
+**ind_picked_up** - Indicates what card (if any) the analyzed player's
+opponent picks up.
+
+**team_ind_tricks_won** - Counts the number of tricks the analyzed
+player wins when playing a simulated round with their partner (ranges
+from 0-5).
+
+**team_tricks_won** - Counts the total number of tricks the analyzed
+player and their partner win when playing a simulated round together
+(ranges from 0-5).
+
+**alone_tricks_won** - Counts the number of tricks the analyzed player
+wins when playing a simulated round alone without their partner (ranges
+from 0-5).
+
+**predicted_call** - The hard coded predicted decision based on the
+player's hand. This will get treated as the baseline prediction when
+comparing model performances.
+
+**correct_call** - The correct decision a player should make based on
+the scores from "team_ind_tricks_won", "team_tricks_won", and
+"alone_tricks_won". *This is the target variable for this project.* 
+
+\
+
+# Part 1: Bidding on the Turned Up Suit
+
+### Load in Euchre dataframe simulated in Python
+
+```{r}
+euchre_turn_up = read.csv('euchre_turn_up_stats_train.csv')
+head(euchre_turn_up) %>%
+  kbl() %>%
+  kable_styling()
+```
+
+\
+
+## Exploratory Data Analysis
+
+```{r}
+summary(euchre_turn_up)
+```
+
+All the numerical values have the correct distributions associated.
+There can only be 0 or 1 of each trump card in a hand because only 1
+suit can be trump. Also, the non-trump cards all have values that range
+from 0-3 with the exception of jacks. This is because there can be 3
+non-trump suits. There can only be 2 non-trump jacks because of the
+Right Bower and the Left Bower, which means that 2 jack values are always
+trump.
+
+There can only be 5 cards dealt to a hand which is why the "Count_Trump" values range from 0-5. In addition, there are 4 suits in a card game and
+one of them will be trump. Therefore, the maximum number of non-trump
+suits in a hand is 3. This value can be as low as 0 if a player only has
+trump cards.
+
+All the other binary variables all have values that are either 0 or 1.
+
+All this information concludes that this dataset is perfectly clean.
+
+\
+
+#### Outcome variable and predicted outcome variable
+
+Here are the values that make up the target variable "correct_call"
+and the predicted target variable "predicted_call."
+
+**Order Trump Alone** - When a player has a hand with many cards that
+are the same suit as the turned up card, they can opt to "go alone." If
+they win all 5 tricks, their team wins 4 points. If they win 3-4 tricks,
+their team gets 1 point. If they win less than 3 tricks, the other team
+wins 2 points. A player should "Order Trump Alone" when they believe
+they can win all the tricks without help from their
+partner.
+
+**Order Trump** - When a player has a hand with a decent number of cards
+that are the same suit as the turned up card, they can opt to "order
+trump." They play the round with their partner and can win 2
+points if they win all 5 tricks, and 1 point if they win 3-4 tricks. If
+they win less than 3 tricks, the opposing team gets 2 points.
+
+**Pass** - A player will "pass" if they simply don't have a good hand
+that would win them a lot of tricks. They can also pass if they are starting first and have a better hand of a suit that wasn't turned up. This is because they will have the opportunity to bid the suit they want if everyone passes on the turned up suit. 
+
+\
+
+#### For simplicity, the target variables will get ordinal numerical imputations
+
+**Order Trump Alone - 2**
+
+**Order Trump - 1**
+
+**Pass - 0**
+
+```{r}
+euchre_turn_up$predicted_call = replace(euchre_turn_up$predicted_call, euchre_turn_up$predicted_call == "Pass", 0)
+euchre_turn_up$predicted_call = replace(euchre_turn_up$predicted_call, euchre_turn_up$predicted_call == "Order Trump", 1)
+euchre_turn_up$predicted_call = replace(euchre_turn_up$predicted_call, euchre_turn_up$predicted_call == "Order Trump Alone", 2)
+euchre_turn_up$correct_call = replace(euchre_turn_up$correct_call, euchre_turn_up$correct_call == "Pass", 0)
+euchre_turn_up$correct_call = replace(euchre_turn_up$correct_call, euchre_turn_up$correct_call == "Order Trump", 1)
+euchre_turn_up$correct_call = replace(euchre_turn_up$correct_call, euchre_turn_up$correct_call == "Order Trump Alone", 2)
+```
+
+```{r}
+euchre_turn_up$ind_picked_up[euchre_turn_up$ind_picked_up == ''] = 'None'
+euchre_turn_up$p_picked_up[euchre_turn_up$p_picked_up == ''] = 'None'
+euchre_turn_up$opp_picked_up[euchre_turn_up$opp_picked_up == ''] = 'None'
+```
+
+\
+
+#### View number of records that are associated with each output
+
+```{r}
+table(euchre_turn_up$correct_call)
+```
+
+The minority of records (\~37%) are good enough to make a bid on.
+
+\
+
+#### View handmade predictions
+
+```{r}
+table(euchre_turn_up$correct_call, euchre_turn_up$predicted_call, dnn=c('True', 'Pred'))
+```
+
+From this data, we can see that the vast majority of records are getting
+classified as zero. The handmade predictions, based on intuition, are
+not aggressive at bidding trump at all. It looks like there is a lot of
+room for improvement here.
+
+\
+
+#### Change data type of columns for plotting
+
+```{r}
+euchre_turn_up[,names(euchre_turn_up)] = lapply(euchre_turn_up[,names(euchre_turn_up)], as.factor)
+euchre_turn_up$Strength = as.integer(euchre_turn_up$Strength)
+```
+
+\
+
+#### Convert character variables to factors
+
+```{r}
+euchre_turn_up$ind_picked_up = factor(euchre_turn_up$ind_picked_up, levels = c('None', 'Nine', 'Ten', 'Queen', 'King', 'Ace', 'Jack'))
+euchre_turn_up$p_picked_up = factor(euchre_turn_up$p_picked_up, levels = c('None', 'Nine', 'Ten', 'Queen', 'King', 'Ace', 'Jack'))
+euchre_turn_up$opp_picked_up = factor(euchre_turn_up$opp_picked_up, levels = c('None', 'Nine', 'Ten', 'Queen', 'King', 'Ace', 'Jack'))
+euchre_turn_up$Broad_Start_Order = factor(euchre_turn_up$Broad_Start_Order, levels = c('First', 'Middle', 'Last'))
+```
+
+\
+
+### Show relationships between different variables and the correct call
+
+```{r}
+for(column in names(euchre_turn_up[,2:25])){
+  target = 'correct_call'
+  column_name = column
+  target_name = target
+  
+  
+  if(class(euchre_turn_up[,column])=='integer' | class(euchre_turn_up[,column])=='numeric'){
+    column = euchre_turn_up[, column]
+    target = euchre_turn_up[, target]
+    df = data.frame(column, target)
+    p = ggplot(df, aes(x = target, y = column)) + 
+      geom_boxplot() +
+      labs(x = target_name, y = column_name) +
+      coord_flip()
+    print(p)
+  }
+  else{
+    column = euchre_turn_up[, column]
+    target = euchre_turn_up[, target]
+    df = data.frame(column, target)
+    p = ggplot(df, aes(x = column, fill = target)) + 
+      ggtitle(paste('Proportion of', column_name, 'in each class')) +
+      geom_bar(position = position_fill(reverse=TRUE)) +
+      labs(x = column_name, y =' proportion', fill = target_name) +
+      coord_flip()
+
+    print(p)
+  }
+}
+# end plots
+```
+
+**Right Bower** - Better hands significantly tend to have the Right Bower more
+frequently than not.
+
+**Left Bower** - Better hands tend to have the Left Bower more
+frequently than not.
+
+**TAce** - Better hands tend to have the trump ace more frequently than
+not.
+
+**TKing** - Better hands tend to have the trump king more frequently
+than not.
+
+**TQueen** - Better hands tend to have the trump queen more frequently
+than not.
+
+**TTen** - Better hands tend to have the trump ten more frequently than
+not.
+
+**TNine** - Better hands tend to have the trump nine more frequently
+than not.
+
+**Ace_count** - Better hands tend to have at least one non-trump ace.
+
+**King_count** - Worse hands slightly tend to have more non-trump kings.
+
+**Queen_count** - Worse hands tend to have more non-trump queens.
+
+**Jack_Count** - Worse hands tend to have more non-trump jacks.
+
+**Ten_count** - Worse hands significantly tend to have more non-trump
+tens.
+
+**Nine_count** - Worse hands significantly tend to have more non-trump
+nines.
+
+**Count_Trump** - Having more trump cards is significantly more frequent
+in better hands.
+
+**Strength** - Hands that go alone tend to be stronger while hands that
+pass tend to have lower strength. This variable is the sum of the
+assigned strength values of all cards in hand. It is difficult to
+calculate in a real-life game, so it will get removed.
+
+**Non_Trump_Suit_Count** - Better hands tend to have less non-trump
+suits in hand.
+
+**Non_Trump_Turned_Down_Ind** - Since someone always has to pick up the turned up card
+in this simulation, this column has no meaning and will be removed.
+
+**Start_Order** - Players that initially start last tend to be more
+successful. Starting 1st or 3rd tends to be the most unfavorable
+(probably because neither the player nor their partner is dealing for that
+round).
+
+**Dealer** - Players that are the dealer for a round tend to be more
+successful.
+
+**Strongest_Card** - Hands where the strongest card is 12 or 13 (Left or
+Right Bower present) seem to be indicative of positive results.
+
+**Broad_Start_Order** - Hands that start last tend to be more successful
+while hands that start first tend to be the least successful. 
+
+**ind_picked_up** - The main player picking up the turned up card generally yields a more favorable outcome, especially if it’s a jack. There is a concern with
+multicollinearity with this variable as it double-counts the card picked
+up in hand.
+
+**p_picked_up** - Not very telling. 
+
+**opp_picked_up** - An opponent picking up the turned up card generally
+yields a more unfavorable outcome, especially if it's a jack. 
+
+**Since there is a similar impact when picking up each non-jack card, every non-jack card will be grouped together and a new set of variables will get tested.**
+
+\
+
+#### Assign broad picked up card values
+
+```{r}
+euchre_turn_up = euchre_turn_up %>%
+  mutate(broad_ind_pick_up = case_when(ind_picked_up == 'Jack' ~ 'Jack', 
+                                       ind_picked_up == 'None' ~ 'None', 
+                                       TRUE ~ 'Other'),
+         broad_p_pick_up = case_when(p_picked_up == 'Jack' ~ 'Jack', 
+                                       p_picked_up == 'None' ~ 'None', 
+                                       TRUE ~ 'Other'),
+         broad_opp_pick_up = case_when(opp_picked_up == 'Jack' ~ 'Jack', 
+                                       opp_picked_up == 'None' ~ 'None', 
+                                       TRUE ~ 'Other'))
+
+euchre_turn_up$broad_ind_pick_up = factor(euchre_turn_up$broad_ind_pick_up, levels = c('None', 'Other', 'Jack'))
+euchre_turn_up$broad_p_pick_up = factor(euchre_turn_up$broad_p_pick_up, levels = c('None', 'Other', 'Jack'))
+euchre_turn_up$broad_opp_pick_up = factor(euchre_turn_up$broad_opp_pick_up, levels = c('None', 'Other', 'Jack'))
+```
+
+\
+
+#### Convert columns to easier-to-process classes
+
+```{r}
+euchre_turn_up[,names(euchre_turn_up)] = lapply(euchre_turn_up[,names(euchre_turn_up)], as.factor)
+euchre_turn_up$Strength = as.integer(euchre_turn_up$Strength)
+```
+
+\
+
+#### Show relationships between new broad picked up columns and the correct call to make
+
+```{r}
+for(column in names(euchre_turn_up[,31:33])){
+  target = 'correct_call'
+  column_name = column
+  target_name = target
+  
+  
+  if(class(euchre_turn_up[,column])=='integer' | class(euchre_turn_up[,column])=='numeric'){
+    column = euchre_turn_up[, column]
+    target = euchre_turn_up[, target]
+    df = data.frame(column, target)
+    p = ggplot(df, aes(x = target, y = column)) + 
+      geom_boxplot() +
+      labs(x = target_name, y = column_name) +
+      coord_flip()
+    print(p)
+  }
+  else{
+    column = euchre_turn_up[, column]
+    target = euchre_turn_up[, target]
+    df = data.frame(column, target)
+    p = ggplot(df, aes(x = column, fill = target)) + 
+      ggtitle(paste('Proportion of', column_name, 'in each class')) +
+      geom_bar(position = position_fill(reverse=TRUE)) +
+      labs(x = column_name, y =' proportion', fill = target_name) +
+      coord_flip()
+
+    print(p)
+  }
+}
+# end plots
+```
+
+These visualizations are easier to follow. If the analyzed person or
+their partner picks up a jack, it yields better results for them. The
+opponents are also more likely to win a round if they pick up a jack or
+another card.
+
+Because broad_ind_picked_up creates multicollinearity, it will get removed from the dataset.
+
+\
+
+#### Remove irrelevant columns
+
+The following columns were removed: Suit, Strength,
+Non_Trump_Turned_Down_Color_Ind, Start_Order, ind_pick_up, p_pick_up,
+opp_pick_up, and broad_ind_picked_up
+
+```{r}
+euchre_turn_up = euchre_turn_up[, -c(1, 16, 18:19, 23:25, 31)]
+```
+
+\
+
+#### Create new dataframe that removes variables that are involved with the target variable (they create leakage)
+
+Variables removed: team_ind_tricks_won, team_tricks_won,
+alone_tricks_won, predicted_call
+
+Also, numerical variables are converted back to integers.
+
+```{r}
+euchre_turn_up[,names(euchre_turn_up[,-c(18, 22:25)])] = lapply(euchre_turn_up[,names(euchre_turn_up[,-c(18, 22:25)])], as.character)
+euchre_turn_up[,names(euchre_turn_up[,-c(18, 22:25)])] = lapply(euchre_turn_up[,names(euchre_turn_up[,-c(18, 22:25)])], as.integer)
+euchre_turn_up1 = euchre_turn_up[, -c(19:22)]
+```
+
+\
+
+### Split euchre dataset into training and validation data to build models
+
+80% of the dataset will be for training while 20% will be for
+validation.
+
+```{r}
+set.seed(1)
+sample_index = sample(nrow(euchre_turn_up1), nrow(euchre_turn_up1) * 0.80)
+euchre_turn_up_train = euchre_turn_up1[sample_index, ]
+euchre_turn_up_test = euchre_turn_up1[-sample_index, ]
+euchre_turn_up_results = euchre_turn_up[, 19:23] # dataframe that only has result columns
+results_train = euchre_turn_up_results[sample_index, ]
+results_test = euchre_turn_up_results[-sample_index, ]
+euchre_all_test_turn_up = euchre_turn_up[-sample_index, ]
+```
+
+\
+
+## Create functions that will be used to measure success of models
+
+Here is what the functions do:
+
+**build_results** - This predicts the correct call from a built model
+and creates a dataframe that stores the predictions. The other
+functions use the dataframe made from this.
+
+**find_loss_cost** - This calculates the points that were failed to be
+earned when the model makes a call that is different than what should
+have been called. For each record, the potential number of points won
+(given the correct call was made) is calculated. The possible numbers in
+this field are 0 (because it is impossible to win any points when no bid
+should be made), 1, 2, and 4. Another field is added that calculates the
+points earned based off the model prediction. The numbers could be -2
+(for hands that predicted 1 or 2 but were actually 0). They can also be
+0 (predicted class is 0), 1, 2, and 4. A field gets made that calculates
+the absolute difference. The average number in this field is the loss
+cost value. There is also a feature included that records the average
+loss cost value at every misclassification type.
+
+**Get_Macro_AUC** - This calculates the area under the curve for each of
+the 3 classes. The average is calculated from these 3 classes.
+
+**Macro_F1_Score_Compute** - This calculates the F1 score for each of
+the 3 predictor classes. The average is calculated from these 3 classes.
+
+**Model_Accuracy** - This measures the number of records that were
+correctly classified divided by the total number of records.
+
+**Get_Euchre_Call_Percent** - This takes the number of records that are predicted as 1s and 2s but are actually 0s. This number gets
+divided by the total number of records predicted as 1s and 2s. The
+output is the percent of bids made that get euchred.
+
+**Get_Missed_Call_Percent** - This takes the number of records that are
+predicted as 0s but are actually 1s and 2s. This number gets divided by
+the total number of records predicted as 0s. Essentially, this is the
+proportion of records that don't get bid trump when they actually should
+have.
+
+**binary_F1Score** - This calculates the F1 score for binary prediction
+classes.
+
+**build_lm1_metrics** - This assesses results provided from a binary logistic regression model.
+
+**build_lm2_metrics** - This assesses results provided from a second version of a binary logistic regression model.
+
+**Build_metrics_table** - This uses a provided model and results table
+to create a new dataframe that measures the calculated metrics defined
+above.
+
+**Build_metrics_table_rslt_tbl** - This uses a provided results table to
+create a new dataframe that measures the calculated metrics defined
+above (except Macro AUC).
+
+```{r}
+build_results = function(results_df = results_test, model){
+  if(model$call[[1]] == 'orm'){
+    x = predict(model, newdata = euchre_turn_up_test, type = 'fitted.ind')
+    results_df$lp_score = predict(model, newdata = euchre_turn_up_test, type = 'lp')
+    results_df = results_df %>%
+      mutate(adj_model_bid = case_when(lp_score<=cutoff_1~0, lp_score<=cutoff_2~1, TRUE~2))
+  }
+  else {
+    x = predict(model, newdata = euchre_turn_up_test, type = 'prob')
+  }
+  x = as.data.frame(x)
+  names(x)[1] = 'p_zero'
+  names(x)[2] = 'p_one'
+  names(x)[3] = 'p_two'
+  results_df = cbind(results_df, x)
+  results_df = results_df %>%
+    mutate(best = pmax(p_zero, p_one, p_two),
+           model_bid = case_when(p_zero == best~0, p_one == best~1, TRUE~2))
+  assign(paste0('results_', deparse(substitute(model))), results_df, envir=.GlobalEnv)
+}
+
+find_loss_cost = function(df, test_column, return_avg_cost = TRUE, save_ind_costs = FALSE){
+  df = df %>%
+    mutate(potential_points_earned = case_when((team_tricks_won >= 3 & team_tricks_won < 5 & alone_tricks_won <5)~1, 
+                                               (team_tricks_won == 5 & alone_tricks_won != 5)~2,
+                                               (alone_tricks_won == 5)~4, TRUE~0),
+           points_won = case_when((get(test_column) == 1 & team_tricks_won <3)~-2,
+                                  (get(test_column) == 2 & alone_tricks_won <3)~-2,
+                                  (get(test_column) == 1 & team_tricks_won >= 3 & team_tricks_won < 5)~1,
+                                  (get(test_column) == 2 & alone_tricks_won >= 3 & alone_tricks_won < 5)~1,
+                                  (get(test_column) == 1 & team_tricks_won == 5)~2,
+                                  (get(test_column) == 2 & alone_tricks_won == 5)~4, TRUE~0),
+           loss_cost = abs(points_won - potential_points_earned))
+  if(save_ind_costs == TRUE){
+    p0_a1 = mean(df[(df[, test_column] == 0 & df$correct_call == 1),]$loss_cost)
+    p0_a2 = mean(df[(df[, test_column] == 0 & df$correct_call == 2),]$loss_cost)
+    p1_a0 = mean(df[(df[, test_column] == 1 & df$correct_call == 0),]$loss_cost)
+    p1_a2 = mean(df[(df[, test_column] == 1 & df$correct_call == 2),]$loss_cost)
+    p2_a0 = mean(df[(df[, test_column] == 2 & df$correct_call == 0),]$loss_cost)
+    p2_a1 = mean(df[(df[, test_column] == 2 & df$correct_call == 1),]$loss_cost)
+    assign('p0_a1', p0_a1, envir = .GlobalEnv)
+    assign('p0_a2', p0_a2, envir = .GlobalEnv)
+    assign('p1_a0', p1_a0, envir = .GlobalEnv)
+    assign('p1_a2', p1_a2, envir = .GlobalEnv)
+    assign('p2_a0', p2_a0, envir = .GlobalEnv)
+    assign('p2_a1', p2_a1, envir = .GlobalEnv)
+  }
+  
+  if(return_avg_cost == TRUE){
+    return(mean(df$loss_cost))
+  }
+}
+
+Get_Macro_AUC = function(df){
+  p_pass = df$p_zero
+  p_order_trump = df$p_one
+  p_go_alone = df$p_two
+  bid.dummy = dummy_cols(df,
+                           select_columns = "correct_call",
+                           remove_first_dummy = FALSE,
+                           remove_selected_columns = TRUE)
+  pred0 = prediction(p_pass, bid.dummy$correct_call_0)
+  perf0 = performance(pred0, "tpr", "fpr")
+  #plot(perf1, colorize=F, print.cutoffs.at=seq(.1, by=.1))
+  AUC_0 = slot(performance(pred0, "auc"), "y.values")[[1]]
+  
+  pred1 = prediction(p_order_trump, bid.dummy$correct_call_1)
+  perf1 = performance(pred1, "tpr", "fpr")
+  #plot(perf1, colorize=F, print.cutoffs.at=seq(.1, by=.1))
+  AUC_1 = slot(performance(pred1, "auc"), "y.values")[[1]]
+  
+  pred2 = prediction(p_go_alone, bid.dummy$correct_call_2)
+  perf2 = performance(pred2, "tpr", "fpr")
+  #plot(perf1, colorize=F, print.cutoffs.at=seq(.1, by=.1))
+  AUC_2 = slot(performance(pred2, "auc"), "y.values")[[1]]
+  
+  return((AUC_0+AUC_1+AUC_2)/3)
+}
+
+Macro_F1_Score_Compute = function(correct_vector, predicted_vector){
+  matrix = table(correct_vector, predicted_vector)
+  F1_0 = matrix[1]/(matrix[1]+matrix[2]+matrix[3]+matrix[4]+matrix[7])
+  F1_1 = matrix[5]/(matrix[2]+matrix[5]+matrix[8]+matrix[4]+matrix[6])
+  F1_2 = matrix[9]/(matrix[3]+matrix[6]+matrix[9]+matrix[7]+matrix[8])
+  
+  return((F1_0+F1_1+F1_2)/3)
+}
+
+Model_Accuracy = function(correct_vector, predicted_vector){
+  matrix = table(correct_vector, predicted_vector)
+  num_correct = matrix[1]+matrix[5]+matrix[9]
+  total = matrix[1]+matrix[2]+matrix[3]+matrix[4]+matrix[5]+matrix[6]+matrix[7]+matrix[8]+matrix[9]
+  return(num_correct/total)
+}
+  
+Get_Euchre_Call_Percent = function(correct_vector, predicted_vector){
+  matrix = table(correct_vector, predicted_vector)
+  num_euchred = matrix[4]+matrix[7]
+  total = matrix[4]+matrix[5]+matrix[6]+matrix[7]+matrix[8]+matrix[9]
+  return(num_euchred/total)
+}
+
+Get_Missed_Call_Percent = function(correct_vector, predicted_vector){
+  matrix = table(correct_vector, predicted_vector)
+  missed_calls = matrix[2] + matrix[3]
+  total = matrix[1] + matrix[2] + matrix[3]
+  return(missed_calls/total)
+}
+
+binary_F1Score = function(matrix){
+  precision = matrix[4]/(matrix[4]+matrix[3])
+  recall = matrix[4]/(matrix[4]+matrix[2])
+  score = round((2*precision*recall)/(precision+recall), 4)
+}
+
+build_lm1_metrics = function(model){
+  logr1_results = euchre_all_test_turn_up
+  logr1_results$correct_call1 = ifelse(logr1_results$correct_call == 0, 0, 1)
+  logr1_results$model_prediction = ifelse(predict(model, newdata = logr1_results, type =
+                                                         'response') <.5, 0, 1)
+  logr1_results$model_adj_prediction = ifelse(predict(model, newdata = logr1_results,
+                                                           type = 'response') < cutoff_1_lm, 0, 1)
+  matrix = table(logr1_results$correct_call1, logr1_results$model_prediction, dnn= c("True", "Pred"))
+
+  matrix_adj = table(logr1_results$correct_call1, logr1_results$model_adj_prediction, dnn = c("True", "Pred"))
+  
+  Name = deparse(substitute(model))
+  Accuracy = round((matrix[1]+matrix[4])/sum(matrix), 4)
+  F1_Score = binary_F1Score(matrix)
+  Accuracy_adj = round((matrix_adj[1]+matrix_adj[4])/sum(matrix_adj), 4)
+  F1_Score_adj = binary_F1Score(matrix_adj)
+  BIC = BIC(model)
+  AIC = AIC(model)
+  
+  model_df = data.frame(Name, Accuracy, F1_Score, Accuracy_adj, F1_Score_adj, BIC, AIC)
+  assign('model_df', model_df, envir=.GlobalEnv)
+  if(exists('lm1_models')){
+    lm1_models = rbind(lm1_models, model_df)
+  } else {
+    lm1_models = model_df
+  }
+  assign('lm1_models', lm1_models, envir=.GlobalEnv)
+  rm(model_df)
+}
+
+build_lm2_metrics = function(model){
+  logr2_results = euchre_all_test_turn_up
+  logr2_results$correct_call2 = ifelse(logr2_results$correct_call == 0, 0, 1)
+  logr2_results$model_prediction = ifelse(predict(model, newdata = logr2_results, type =
+                                                         'response') <.5, 0, 1)
+  logr2_results$model_adj_prediction = ifelse(predict(model, newdata = logr2_results,
+                                                           type = 'response') < cutoff_2_lm, 0, 1)
+  matrix = table(logr2_results$correct_call2, logr2_results$model_prediction, dnn= c("True", "Pred"))
+
+  matrix_adj = table(logr2_results$correct_call2, logr2_results$model_adj_prediction, dnn = c("True", "Pred"))
+  
+  Name = deparse(substitute(model))
+  Accuracy = round((matrix[1]+matrix[4])/sum(matrix), 4)
+  F1_Score = binary_F1Score(matrix)
+  Accuracy_adj = round((matrix_adj[1]+matrix_adj[4])/sum(matrix_adj), 4)
+  F1_Score_adj = binary_F1Score(matrix_adj)
+  BIC = BIC(model)
+  AIC = AIC(model)
+  
+  model_df = data.frame(Name, Accuracy, F1_Score, Accuracy_adj, F1_Score_adj, BIC, AIC)
+  assign('model_df', model_df, envir=.GlobalEnv)
+  if(exists('lm2_models')){
+    lm2_models = rbind(lm2_models, model_df)
+  } else {
+    lm2_models = model_df
+  }
+  assign('lm2_models', lm2_models, envir=.GlobalEnv)
+  rm(model_df)
+}
+
+Build_metrics_table = function(model){
+  model_name = deparse(substitute(model))
+  results_table = get(paste0('results_', model_name))
+  df = data.frame(model_name = model_name)
+  
+  df$loss_cost = find_loss_cost(results_table, 'model_bid')
+  df$macro_auc = Get_Macro_AUC(results_table)
+  df$macro_f1 = Macro_F1_Score_Compute(results_table$correct_call,
+                                       results_table$model_bid)
+  df$accuracy = Model_Accuracy(results_table$correct_call,
+                               results_table$model_bid)
+  df$p_euchred_calls = Get_Euchre_Call_Percent(results_table$correct_call,
+                                               results_table$model_bid)
+  df$p_missed_calls = Get_Missed_Call_Percent(results_table$correct_call,
+                                              results_table$model_bid)
+    
+  if(model$call[[1]] == 'orm'){
+    df$adj_loss_cost = find_loss_cost(results_table, 'adj_model_bid')
+    df$adj_macro_f1 = Macro_F1_Score_Compute(results_table$correct_call,
+                                             results_table$adj_model_bid)
+    df$adj_accuracy = Model_Accuracy(results_table$correct_call,
+                                     results_table$adj_model_bid)
+    df$adj_p_euchred_calls = Get_Euchre_Call_Percent(results_table$correct_call,
+                                                     results_table$adj_model_bid)
+    df$adj_p_missed_calls = Get_Missed_Call_Percent(results_table$correct_call,
+                                                    results_table$adj_model_bid)
+    df$BIC = BIC(model)
+    df$AIC = AIC(model)
+    df$num_predictors = length(model$assign)
+  }
+  if(model$call[[1]] == 'multinom'){
+    df$BIC = BIC(model)
+    df$AIC = AIC(model)
+  }
+  assign(paste0(deparse(substitute(model)), '_stats'), df, envir=.GlobalEnv)
+}
+
+Build_metrics_table_rslt_tbl = function(results_table, table_name, result_variable_name){
+  df = data.frame(model_name = table_name)
+  
+  df$loss_cost = find_loss_cost(results_table, result_variable_name)
+  df$macro_f1 = Macro_F1_Score_Compute(results_table$correct_call,
+                                       results_table[,result_variable_name])
+  df$accuracy = Model_Accuracy(results_table$correct_call,
+                               results_table[,result_variable_name])
+  df$p_euchred_calls = Get_Euchre_Call_Percent(results_table$correct_call,
+                                               results_table[,result_variable_name])
+  df$p_missed_calls = Get_Missed_Call_Percent(results_table$correct_call,
+                                              results_table[,result_variable_name])
+  assign(paste0(table_name, '_stats'), df, envir=.GlobalEnv)
+}
+
+```
+
+\
+
+## Create and determine the best models
+
+There are 6 of many algorithms that have been proven to work well with
+multiclass outputs:
+
+**ordinal regression** - Through the rms library, the orm (ordinal regression model) function is great for multiclass predictions when the target variable is ordinal and the predictor variables are nominal. This is the case here as the best hands are classified as 2s while the worst hands are classified as 0s, in an ordinal fashion. The orm function outputs a linear predictor value that can be referred as a log odds value. The function can also make predictions based on the probability that a record could be in a class. **For this analysis, both prediction methods will be explored.** This model is set up so each variable measured has one predictor coefficient and 2 intercepts which measure two predicted classes.
+
+**multinomial regression** - This is a form of logistic regression used
+when the outcome variable is not necessarily ordinal. It can be used
+through the multinom function though the nnet library. The algorithm
+creates separate coefficient values for each predicted class, except for
+a class which is set as the default. In this case, there will be two
+sets of coefficients used to create two logit values for the classes
+that will be converted to p-values. The p-value of the class not
+calculated is 1 - the sum of the p-values of the other two classes. The
+class with the highest p-value gets predicted.
+
+**classification tree** - This is the most interpretative algorithm that
+can be best used when playing Euchre in real-time. It can be used
+through the rpart function from the rpart library. The algorithm
+predicts what call to make based on a few conditions and breaks up the
+tree into different leafs. The classification decision is based on which
+classifier has the most training records in a specific leaf.
+
+**random forest** - This is similar to classification trees, but this
+algorithm trains on many trees and the result gets averaged together. It
+can be used though the randomForest function from the randomForest
+library. Although useless to interpret in real-time, the results of this
+algorithm can measure variable importance. This is useful to determine
+which variables directly make a hand good enough to be classified as a 1
+or 2.
+
+**k nearest neighbors** - This algorithm takes a defined number of
+observations that are most similar to a to-be-predicted observation and
+uses those similar observations to predict the outcome class of the new
+observation. The highest number of a specific outcome class found in the
+defined "most similar" number of observations will be assigned to the
+new observation. Tiebreakers are randomly done. This is done using the
+fnn library.
+
+**discriminant analysis** - This method finds a linear combination of
+variables that will then be used to separate all the different outcome
+classes, similar to clustering. An observed record will get classified
+based on which group it fits closest to. This is done using the mda
+library.
+
+\
+
+In addition, logistic regression (used to predict a binary outcome) will
+be used twice and together to predict the 3 different classes.
+
+**two-step logistic regression** - This method will use a logistic
+regression algorithm to classify the dataset as 0s or 1s (pass or pick
+it up). From there, the variables classified as 1s will go through a
+separate logistic regression algorithm to classify the records as 1s or
+2s (pick it up or pick it up & go alone). The 2 algorithms chosen will
+be be assessed on how well they perform on their own. Once they are
+chosen, they will be integrated together to make multiclass predictions.
+This is done using the stats library to create multiple GLMs, using the
+binomial family.
+
+\
+
+## Ordinal Regression
+
+Using the orm function from rms, results can be predicted in a few ways.
+They can be based on which class has the highest p-value. They can also be
+based on different cutoff values that get manually set for the linear
+predictor scores. This analysis will measure if cutoffs based on
+probability are more effective than manually setting cutoff scores.
+
+\
+
+#### Approximate the 2 cutoff values
+
+These created cutoff values will be the linear predictor logit scores
+that will split the prediction classes. The goal is to fit the data so
+the estimated proportion of data that falls into each class matches the
+proportion of each class in the training data. This method is fine to
+use because the high volume of training data observations are similar to
+any new data the model will analyze.
+
+To approximate the logit cutoff values, the entire training dataset was
+used. 80% of the data was sampled and the proportion of records that
+were of class values 0 and 1 were derived for that sampled dataset. The
+first cutoff value was derived by taking the quantile of the proportion
+of records classified as 0 for the linear predictor scores. The
+second cutoff value was derived by taking the quantile of the proportion
+of records classified as 0 or 1 for the linear predictor scores.
+
+For instance, if 30% of the random data was class 0 and 60% of the
+random data was class 1, the estimated cutoffs would be the lp scores at
+the 30th percentile and the 90th percentile.
+
+This process gets repeated 100 times so 100 values get assigned for each
+cutoff score iteration. The final cutoff scores are the averages of each
+iteration.
+
+These values will be applied to all the orm models created because the
+lp distributions will be similar and this is the most convenient way of
+making cutoffs.
+
+\
+
+#### Create cutoff estimates that best fit the data
+
+```{r, warning=FALSE}
+cutoff_1_list = c()
+cutoff_2_list = c()
+for(i in 1:100){
+  sample_index = sample(nrow(euchre_turn_up1), nrow(euchre_turn_up1) * 0.80)
+  euchre_turn_up_train_sample = euchre_turn_up1[sample_index, ]
+  full.orm = orm(correct_call ~ ., data = euchre_turn_up_train_sample)
+  pass_proportion = nrow(euchre_turn_up_train_sample[euchre_turn_up_train_sample$correct_call==0,])/nrow(euchre_turn_up_train_sample)
+  order_trump_proportion = nrow(euchre_turn_up_train_sample[euchre_turn_up_train_sample$correct_call==1,])/nrow(euchre_turn_up_train_sample)
+  y = predict(full.orm)
+  sample_cutoff_1 = quantile(y, pass_proportion)
+  sample_cutoff_2 = quantile(y, pass_proportion+order_trump_proportion)
+  cutoff_1_list = append(cutoff_1_list, sample_cutoff_1)
+  cutoff_2_list = append(cutoff_2_list, sample_cutoff_2)
+}
+cutoff_1 = mean(cutoff_1_list)
+cutoff_2 = mean(cutoff_2_list)
+```
+
+\
+
+### Ordinal Regression with all predictors
+
+```{r, warning=FALSE}
+(full.orm = orm(correct_call ~ ., data = euchre_turn_up_train))
+```
+
+It is interesting to see that the coefficients for "Left_Bower" and
+"Strongest_Card" are negative. It is easily assumed that having a higher
+"strongest card" and Left Bower would only be beneficial (as seen from
+the visualizations). Since all the predictors are present, some
+coefficient values could be inaccurate. In order to fix this, let's
+build orm models with less predictors.
+
+\
+
+### Ordinal Regression with top performing individual predictors
+
+The first reduced-variable orm model will be built based on the top
+variables that perform the best individually, based on chi-squared score.
+All of the well-performing variables will be included in this new model.
+
+```{r}
+top_ind_predictors = data.frame()
+for(i in 1:21){
+  if(i == 19){
+    next # ignoring result column
+  }
+  df = euchre_turn_up_train[,c(i,19)]
+  (one.orm = orm(correct_call ~ ., data = df))
+  Score_chi2 = one.orm$stats[8]
+  var_name = colnames(df[1])
+  table = data.frame(var_name, Score_chi2)
+  top_ind_predictors = rbind(top_ind_predictors, table)
+}
+rm(table)
+
+top_ind_predictors = top_ind_predictors %>%
+  arrange(desc(Score_chi2))
+
+top_ind_predictors %>%
+  kbl() %>%
+  kable_styling()
+```
+
+The top 10 predictors (Score_chi2 \> 4000) will be used to build this
+model since there is a good cutoff between the chi-squared score of the
+10th best predictor and the 11th best predictor.
+
+```{r, warning=FALSE}
+best_predictors = top_ind_predictors[1:10,]$var_name
+df = euchre_turn_up_train %>%
+  select(matches(best_predictors), 'correct_call')
+(top.pred.orm = orm(correct_call~., data = df))
+```
+
+These coefficients generally look a lot better although it is still
+surprising to see the Strongest_Card variable have a negative
+coefficient.
+
+\
+
+### BIC stepwise regression
+
+It would also be interesting to look at the orm models that are
+optimized for BIC scoring because BIC measures model performance but
+also penalizes models for being too complex. Forward steps (where a new
+variable is added per iteration to improve BIC the most) and backward
+steps (where a variable is removed per iteration to improve BIC) will be
+tested to create two additional orm models.
+
+\
+
+### Create forward regression model
+
+```{r, warning=FALSE}
+tot_pred = top_ind_predictors[,1]
+not_used_pred_list = (top_ind_predictors[,1])
+used_pred_list = top_ind_predictors[0,1]
+stop_ind = 0
+
+for(i in 1:(nrow(top_ind_predictors))){
+  for(var in not_used_pred_list){
+    df = euchre_turn_up_train %>%
+      select(matches(used_pred_list), matches(var), 'correct_call')
+    fwd_orm = orm(correct_call~., data = df)
+    
+    if(!exists('use_var')){
+      use_var = var
+    }
+    if(!exists('Best.fwd.orm')){
+      Best.fwd.orm = fwd_orm
+    }
+    if(!exists('Best.fwd.orm.iter')){
+      Best.fwd.orm.iter = fwd_orm
+    }
+    if(BIC(fwd_orm)<BIC(Best.fwd.orm.iter)){
+      Best.fwd.orm.iter = fwd_orm
+      use_var = var
+    }
+  }
+  used_pred_list = c(used_pred_list, use_var)
+  not_used_pred_list = tot_pred[!tot_pred %in% used_pred_list]
+  if(BIC(Best.fwd.orm.iter)<BIC(Best.fwd.orm)){
+    Best.fwd.orm = Best.fwd.orm.iter
+    stop_ind = 0
+  } else{
+    stop_ind = stop_ind + 1
+  }
+  rm(Best.fwd.orm.iter)
+  rm(use_var)
+  rm(df)
+  if(stop_ind == 3){
+    break
+  }
+}
+rm(var)
+rm(fwd_orm)
+rm(tot_pred)
+rm(not_used_pred_list)
+rm(used_pred_list)
+rm(stop_ind)
+```
+
+```{r}
+Best.fwd.orm
+```
+
+It looks like 13 of 20 predictors were used to build this model. The
+coefficients look pretty good for the most part.
+
+```{r, warning=FALSE, echo=FALSE}
+# #rm(Best.fwd.orm)
+# #rm(Best.orm.test)
+# tot_pred = top_ind_predictors[,1]
+# not_used_pred_list = top_ind_predictors[,1]
+# used_pred_list = top_ind_predictors[0,1]
+# Fwd_BIC_Table = data.frame()
+# 
+# for(i in 1:(nrow(top_ind_predictors))){
+#   Fwd_BIC_Table.iter = data.frame()
+#   for(var in not_used_pred_list){
+#     df = euchre_turn_up_train %>%
+#       select(matches(used_pred_list), matches(var), 'correct_call')
+#     fwd_orm = orm(correct_call~., data = df)
+#     #print(fwd_orm[['sformula']])
+#     #print(BIC(fwd_orm))
+#     used_predictors = paste(fwd_orm[['sformula']])
+#     fwd_BIC = BIC(fwd_orm)
+#     num_var = i
+#     add_row = data.frame(used_predictors, fwd_BIC, num_var)
+#     Fwd_BIC_Table.iter = rbind(Fwd_BIC_Table.iter, add_row)
+#     rm(add_row)
+#     
+#     if(!exists('use_var')){
+#       use_var = var
+#     }
+#     if(!exists('Best.fwd.orm')){
+#       Best.fwd.orm = fwd_orm
+#     }
+#     if(!exists('Best.fwd.orm.iter')){
+#       Best.fwd.orm.iter = fwd_orm
+#     }
+#     if(!exists('Best.fwd.orm.iter.chunk')){
+#       Best.fwd.orm.iter.chunk = fwd_orm
+#     }
+#     if(BIC(fwd_orm)<BIC(Best.fwd.orm.iter)){
+#       Best.fwd.orm.iter = fwd_orm
+#       use_var = var
+#     }
+#   }
+#   used_pred_list = c(used_pred_list, use_var)
+#   not_used_pred_list = tot_pred[!tot_pred %in% used_pred_list]
+#   if(BIC(Best.fwd.orm.iter)<BIC(Best.fwd.orm)){
+#     Best.fwd.orm = Best.fwd.orm.iter
+#   }
+#   if(BIC(Best.fwd.orm.iter)<BIC(Best.fwd.orm.iter.chunk)){
+#     Best.fwd.orm.iter.chunk = Best.fwd.orm.iter
+#   }
+#   Fwd_BIC_Table.iter = Fwd_BIC_Table.iter %>%
+#     filter((used_predictors != 'correct_call') & (used_predictors != '~')) %>%
+#     arrange(fwd_BIC)
+#   selection_num = max(.25*round(nrow(Fwd_BIC_Table.iter)), digits = 0, sum(Fwd_BIC_Table.iter$fwd_BIC < BIC(Best.fwd.orm.iter)*1.02))
+#   Fwd_BIC_Table.iter = Fwd_BIC_Table.iter %>%
+#     top_n(-selection_num, fwd_BIC)
+#   Fwd_BIC_Table = rbind(Fwd_BIC_Table, Fwd_BIC_Table.iter)
+#   rm(Best.fwd.orm.iter)
+#   rm(use_var)
+#   rm(df)
+#   if(i%%3 == 0){
+#     top_pred = Fwd_BIC_Table %>%
+#       select(used_predictors, fwd_BIC) %>%
+#       unnest_tokens(word, used_predictors) %>%
+#       group_by(word) %>%
+#       summarise(max_bic = max(fwd_BIC), avg_bic = mean(fwd_BIC), count = n()) %>%
+#       arrange(desc(count), max_bic, avg_bic)
+#     
+#     n_pot_pred = nrow(top_pred)
+#     combo_count = min(round(i/2, 0),5)
+#     pred_limit = round(0.4583*combo_count^4 - 8.75*combo_count^3 + 62.542*combo_count^2 - 199.25*combo_count + 251, 0)
+#     pred_list = top_pred$word
+#     n_pred = min(n_pot_pred, pred_limit)
+#     
+#     n_inc_cols = max((i - combo_count), 0)
+#     splitter = ifelse(n_inc_cols == 0, 1, n_inc_cols)
+#     
+#     
+#     used_var_list = top_pred[1:splitter,1]$word
+#     
+#     if(nrow(top_pred) - length(used_var_list) < 10) {
+#       top_pred_list = top_pred[(splitter+1):nrow(top_pred),1]$word
+#     } else {
+#       top_pred_list = top_pred[(splitter+1):(splitter+10),1]$word
+#     }
+#     
+#     #BIC_Combos = data.frame()
+#     combos = combn(top_pred_list, combo_count)
+#     for(i in 1:ncol(combos)){
+#       if(length(used_var_list) > 0){
+#         df = euchre_turn_up_train %>%
+#           select(matches(used_var_list), matches(combos[,i]), 'correct_call')
+#         orm_test = orm(correct_call~., data = df)
+#         used_predictors = paste(orm_test[['sformula']])
+#         BIC_Score = BIC(orm_test)
+#         add_row = data.frame(used_predictors, BIC_Score)
+#         BIC_Combos = rbind(BIC_Combos, add_row)
+#         rm(add_row)
+#       }
+#       else{
+#         df = euchre_turn_up_train %>%
+#           select(matches(combos[,i]), 'correct_call')
+#         orm_test = orm(correct_call~., data = df)
+#         used_predictors = paste(orm_test[['sformula']])
+#         BIC_Score = BIC(orm_test)
+#         add_row = data.frame(used_predictors, BIC_Score)
+#         BIC_Combos = rbind(BIC_Combos, add_row)
+#         rm(add_row)
+#       }
+#         if(!exists('Best.orm.test')){
+#           Best.orm.test = orm_test
+#           }
+#         if(BIC(orm_test)<BIC(Best.orm.test)){
+#           Best.orm.test = orm_test
+#         }
+#     }
+#     rm(df)
+#     BIC_Combos = BIC_Combos %>%
+#       filter((used_predictors != 'correct_call') & (used_predictors != '~')) %>%
+#       arrange(BIC_Score)
+#     if(BIC(Best.orm.test)<BIC(Best.fwd.orm.iter.chunk)){
+#       rev_pred = BIC_Combos[1,] %>%
+#         select(used_predictors) %>%
+#         unnest_tokens(word, used_predictors)
+#       used_pred_list = rev_pred$word
+#       not_used_pred_list = tot_pred[!tot_pred %in% used_pred_list]
+#       if(BIC(Best.orm.test)<BIC(Best.fwd.orm)){
+#         Best.fwd.orm = Best.orm.test
+#       }
+#     }
+#     rm(Best.fwd.orm.iter.chunk)
+#     rm(Best.orm.test)
+#   }
+# }
+# Fwd_BIC_Table = Fwd_BIC_Table %>%
+#   filter((used_predictors != 'correct_call') & (used_predictors != '~')) %>%
+#   arrange(fwd_BIC)
+```
+
+\
+
+### Create backward regression model
+
+```{r, warning=FALSE}
+tot_pred = top_ind_predictors[,1]
+not_used_pred_list = top_ind_predictors[0,1]
+used_pred_list = tot_pred
+stop_ind = 0
+
+for(i in 1:nrow(top_ind_predictors)-2){
+  for(var in used_pred_list){
+    df = euchre_turn_up_train %>%
+      select(matches(used_pred_list), 'correct_call') %>%
+      select(-matches(var))
+    bwd_orm = orm(correct_call~., data = df)
+    if(!exists('use_var')){
+      use_var = var
+    }
+    if(!exists('Best.bwd.orm')){
+      Best.bwd.orm = bwd_orm
+    }
+    if(!exists('Best.bwd.orm.iter')){
+      Best.bwd.orm.iter = bwd_orm
+    }
+    if(BIC(bwd_orm)<BIC(Best.bwd.orm.iter)){
+      Best.bwd.orm.iter = bwd_orm
+      use_var = var
+    }
+  }
+  not_used_pred_list = c(not_used_pred_list, use_var)
+  used_pred_list = tot_pred[!tot_pred %in% not_used_pred_list]
+  if(BIC(Best.bwd.orm.iter)<=BIC(Best.bwd.orm)){
+    Best.bwd.orm = Best.bwd.orm.iter
+    stop_ind = 0
+  } else {
+    stop_ind = stop_ind + 1
+  }
+  rm(Best.bwd.orm.iter)
+  rm(use_var)
+  if(stop_ind == 3){
+    break
+    }
+}
+rm(var)
+rm(df)
+rm(bwd_orm)
+rm(tot_pred)
+rm(not_used_pred_list)
+rm(used_pred_list)
+rm(stop_ind)
+```
+
+```{r}
+Best.bwd.orm
+```
+
+It looks like a presumably important variable ("Count_Trump") was removed.
+It is also surprising to see that "Ace_count" got such a strong negative
+coefficient. 16 of 20 predictors were used.
+
+\
+
+### Assess performance on all the created orm models
+
+The best performing model will be selected as the represented orm model.
+
+```{r, warning=FALSE, echo=FALSE}
+build_results(model = full.orm)
+build_results(model = Best.fwd.orm)
+build_results(model = Best.bwd.orm)
+build_results(model = top.pred.orm)
+
+Build_metrics_table(full.orm)
+Build_metrics_table(Best.fwd.orm)
+Build_metrics_table(Best.bwd.orm)
+Build_metrics_table(top.pred.orm)
+
+turn_up_orm_results = bind_rows(full.orm_stats, Best.fwd.orm_stats, Best.bwd.orm_stats, top.pred.orm_stats)
+
+turn_up_orm_results %>%
+  kbl() %>%
+  kable_styling()
+```
+
+Since the forward ordinal regression model performs well, uses less
+variables, and the coefficients make better sense, it will be the orm
+model to use. In addition, the customized cutoff classification method
+will be used. Although it is not as accurate, it has a better F1 and
+loss cost score.
+
+```{r}
+euchre_turn_up.orm = Best.fwd.orm
+```
+
+\
+
+## Multinomial Regression
+
+### Create full multinomial model
+
+```{r}
+(full.multinom = multinom(correct_call ~ ., data = euchre_turn_up_train))
+```
+
+This is more difficult to interpret compared to the orm model. However,
+the coefficients for the variables can be interpreted the same. Unlike
+the orm model, there are separate coefficients for each predicted class,
+except one. These scores are converted to p-values for each class that
+add to 1.
+
+\
+
+It is interesting that most of the positive and negative coefficients
+for the "2" class generally go in the same direction but have a larger
+magnitude compared to the "1" class for most variables. It can be seen
+by the "broad_opp_pick_upJack" coefficients that if an opponent picks up a
+jack, a class "2" will receive a very low score compared to class "1".
+This makes sense because nobody should ever go alone if it is known that
+the opposing team has the Right Bower. It's great that the model catches
+that.
+
+\
+
+All these coefficients seem to make reasonable sense.
+
+\
+
+### Regression with top 10 individual orm predictors
+
+For curiosity, let's look at how well a multinomial model performs
+with the 10 best predictors from the individual orm models.
+
+```{r}
+df = euchre_turn_up_train %>%
+  select(matches(best_predictors), 'correct_call')
+(top.pred.multinom = multinom(correct_call~., data = df))
+```
+
+These coefficients seem to make reasonable sense, although it is surprising to see the "Dealer" variable receive 2 negative coefficients. 
+
+\
+
+### Regression with step models
+
+```{r, echo=TRUE, results='hide'}
+# Create null multinomial model as baseline 
+null.multinom = multinom(correct_call ~ 1, data = euchre_turn_up_train)
+
+fwd.multinom = step(null.multinom, scope = list(lower = null.multinom, upper = full.multinom), direction = "forward", k = log(nrow(euchre_turn_up_train)))
+
+bwd.multinom = step(full.multinom, direction = "backward", k = log(nrow(euchre_turn_up_train)))
+```
+
+\
+
+### View forward multinomial model
+
+```{r, echo=FALSE}
+fwd.multinom
+```
+
+It looks like 14 of the 20 variables are being used in this model. The
+coefficients look good.
+
+\
+
+### View backward multinomial model
+
+```{r, echo=FALSE}
+bwd.multinom
+```
+
+It looks like all 20 variables are being used in this model, so it is the
+same as the full model.
+
+\
+
+### View performance of all multinomial models
+
+```{r, echo = FALSE}
+build_results(model = full.multinom)
+build_results(model = fwd.multinom)
+build_results(model = bwd.multinom)
+build_results(model = top.pred.multinom)
+
+Build_metrics_table(full.multinom)
+Build_metrics_table(fwd.multinom)
+Build_metrics_table(bwd.multinom)
+Build_metrics_table(top.pred.multinom)
+
+turn_up_multinomial_results = bind_rows(full.multinom_stats, fwd.multinom_stats, bwd.multinom_stats, top.pred.multinom_stats)
+
+turn_up_multinomial_results %>%
+  kbl() %>%
+  kable_styling()
+```
+
+The forward step multinomial model has the best results and looks to be
+simple compared to the other models, so it will be used.
+
+```{r}
+euchre_turn_up.multinom = fwd.multinom
+```
+
+\
+
+## Decision Trees
+
+Decision trees are the most interesting because unlike all the created
+models provided, decision trees are very interpretative and provide a
+clear action of what call to make based on a list of conditions.
+
+It is the most practical model to use in a real-life Euchre game.
+
+\
+
+### Create initial decision tree
+
+```{r}
+default.large.tree = rpart(correct_call ~., data = euchre_turn_up_train, method = "class", control = rpart.control(cp = .001))
+rpart.plot::rpart.plot(default.large.tree)
+```
+
+### Prune the tree to make an easier to follow model
+
+```{r}
+printcp(default.large.tree)
+```
+
+```{r}
+default.pruned.tree = rpart(correct_call ~., data = euchre_turn_up_train, method = "class", control = rpart.control(cp = 0.0013319)) # nsplit = 13
+rpart.plot::rpart.plot(default.pruned.tree)
+```
+
+This tree gives a great list of conditions that should be satisfied when
+making a bid for the hand a player has (when evaluating the turned up
+suit as trump).
+
+\
+
+#### **The player should PASS if:**
+
+[There are 0 trump cards in hand]{style="color:red;"}
+
+**OR**
+
+[There is 1 trump card in hand]{style="color:red;"}\
+AND\
+[There are less than 2 non-trump aces in hand]{style="color:red;"}\
+AND/OR\
+[An opponent is the dealer]{style="color:red;"}
+
+**OR**
+
+[There are 2 trump cards in hand]{style="color:red;"}\
+AND\
+[An opponent is the dealer]{style="color:red;"}\
+AND\
+[The Right Bower is NOT present in hand]{style="color:red;"}\
+AND/OR\
+[There are no non-trump aces in hand]{style="color:red;"}
+
+**OR**
+
+[There are 2 trump cards in hand]{style="color:red;"}\
+AND\
+[An opponent is NOT the dealer]{style="color:red;"}\
+AND\
+[The strongest card in hand is weaker than the Left
+Bower]{style="color:red;"}\
+AND\
+[There are no non-trump aces in hand]{style="color:red;"}
+
+\
+
+#### **The player should order trump if:**
+
+There is 1 trump card in hand\
+AND\
+There are at least 2 non-trump aces in hand\
+AND\
+An opponent is NOT the dealer
+
+**OR**
+
+There are 2 trump cards in hand\
+AND\
+An opponent is the dealer\
+AND\
+There is at least one non-trump ace in hand\
+AND\
+The Right Bower is present in hand
+
+**OR**
+
+There are 2 trump cards in hand\
+AND\
+An opponent is NOT the dealer\
+AND\
+The strongest card is at least as strong as the Left Bower\
+AND/OR\
+There is at least one non-trump ace in hand
+
+**OR**
+
+There are 3 trump cards in hand
+
+**OR**
+
+There are 4-5 trump cards in hand\
+AND\
+The Right Bower is NOT present in hand\
+AND\
+There are no non-trump aces in hand
+
+\
+
+#### **The player should go alone if:**
+
+[There are 4-5 trump cards in hand]{style="color:green;"}\
+AND\
+[The Right Bower is present in hand]{style="color:green;"}\
+AND/OR\
+[There is at least 1 non-trump ace in hand]{style="color:green;"}
+
+\
+
+### Create Weighted Tree
+
+To create this weighted tree, loss costs will be assigned to each
+misclassification category. These loss cost values get calculated by
+using the default tree model to predict what call should be made. The
+difference between the points won off the correct call and the points
+won off the predicted call are calculated as the loss cost. The average
+loss cost for each misclassification category (predicted 0s actual 1s),
+(predicted 1s actual 2s), etc. get stored as the parameter values used
+when creating the new tree.
+
+```{r}
+# Create average loss cost values for each misclassification category
+build_results(model = default.pruned.tree)
+find_loss_cost(results_default.pruned.tree, 'model_bid', return_avg_cost = FALSE, save_ind_costs = TRUE)
+```
+
+```{r}
+weighted.large.tree = rpart(correct_call ~., data = euchre_turn_up_train, method = "class",
+                      parms = list(loss = matrix(c(0, p0_a1, p0_a2, p1_a0, 0, p1_a2, p2_a0, p2_a1, 0), nrow = 3)), control = rpart.control(cp = .001))
+rpart.plot::rpart.plot(weighted.large.tree)
+```
+
+### Prune the tree to make an easier to follow model
+
+```{r}
+printcp(weighted.large.tree)
+```
+
+```{r}
+weighted.pruned.tree = rpart(correct_call ~., data = euchre_turn_up_train, method = "class",
+                      parms = list(loss = matrix(c(0, p0_a1, p0_a2, p1_a0, 0, p1_a2, p2_a0, p2_a1, 0), nrow = 3)), control = rpart.control(cp = 0.0029234)) # nsplit = 13
+rpart.plot::rpart.plot(weighted.pruned.tree)
+```
+
+This tree looks to be slightly more complex than the pruned default
+tree. There seems to be slightly more splits in this tree.
+
+This tree also gives a great list of conditions that should be satisfied
+when making a bid for the turned up suit. 
+
+\
+
+#### **The player should PASS if:**
+
+[There are 0-1 trump cards in hand]{style="color:red;"}
+
+**OR**
+
+[There are 2 trump cards in hand]{style="color:red;"}\
+AND\
+[An opponent is the dealer]{style="color:red;"}\
+AND\
+[There are no non-trump aces in hand]{style="color:red;"}\
+AND/OR\
+[The Right Bower is NOT present in hand]{style="color:red;"}
+
+**OR**
+
+[There are 2 trump cards in hand]{style="color:red;"}\
+AND\
+[An opponent is NOT the dealer]{style="color:red;"}\
+AND\
+[The strongest card in hand is weaker than the Left
+Bower]{style="color:red;"}\
+AND\
+[There are no non-trump aces in hand]{style="color:red;"}
+
+**OR**
+
+[There are 2 trump cards in hand]{style="color:magenta;"}\
+AND\
+[An opponent is NOT the dealer]{style="color:magenta;"}\
+AND\
+[The strongest card in hand is weaker than the Left
+Bower]{style="color:magenta;"}\
+AND\
+[There is exactly 1 non-trump ace in hand]{style="color:magenta;"}
+
+**OR**
+
+[There are 3 trump cards in hand]{style="color:magenta;"}\
+AND\
+[An opponent is the dealer]{style="color:magenta;"}\
+AND\
+[There are no non-trump aces in hand]{style="color:magenta;"}\
+AND\
+[The Right Bower is NOT present in hand]{style="color:magenta;"}
+
+\
+
+#### **The player should order trump if:**
+
+There are 2 trump cards in hand\
+AND\
+An opponent is the dealer\
+AND\
+There is at least one non-trump ace in hand\
+AND\
+The Right Bower is present in hand
+
+**OR**
+
+There are 2 trump cards in hand\
+AND\
+An opponent is NOT the dealer\
+AND\
+The strongest card in hand is at least as strong as the Left Bower\
+AND/OR\
+There are at least 2 non-trump aces in hand
+
+**OR**
+
+There are 3 trump cards in hand\
+AND\
+There are no non-trump aces in hand\
+AND\
+The Right Bower is present in hand\
+AND/OR\
+An opponent is NOT the dealer
+
+**OR**
+
+There are 3 trump cards in hand\
+AND\
+There is at least one non-trump ace in hand\
+AND\
+The strongest card in hand is weaker than the Left Bower
+
+**OR**
+
+There are 3 trump cards in hand\
+AND\
+There is exactly one non-trump ace in hand\
+AND\
+The strongest card in hand is at least as strong as the Left Bower\
+AND\
+There are 2 distinct non-trump suits in hand
+
+\
+
+#### **The player should go alone if:**
+
+[There are 3 trump cards in hand]{style="color:green;"}\
+AND\
+[There is exactly one non-trump ace in hand]{style="color:green;"}\
+AND\
+[The strongest card in hand is at least as strong as the Left
+Bower]{style="color:green;"}\
+AND\
+[There are less than 2 distinct non-trump suits in
+hand]{style="color:green;"}
+
+**OR**
+
+[There are 3 trump cards in hand]{style="color:green;"}\
+AND\
+[There are at least two non-trump aces in hand]{style="color:green;"}\
+AND\
+[The strongest card in hand is at least as strong as the Left
+Bower]{style="color:green;"}
+
+**OR**
+
+[There are 4-5 trump cards in hand]{style="color:green;"}
+
+\
+
+**These trees provide good recommendations for what decisions to make, but they are by no means perfect. There are definitely exceptions that just happen to get grouped in a specific leaf. For example, although it isn't explicitly shown in the tree models, nobody should ever go alone if an opponent is picking up a jack, regardless of how good their hand is.**
+
+**It is also important to note that for the pink leaf scenarios, bidding trump is recommended in dire situations (when the opposing team has 9 points and only needs one point left to score). A little less than half of the records in the pink leafs are successful bids, so it would not hurt to bid trump in these scenarios. This is assuming a scenario where an opponent is not picking up a jack card.**
+
+**On the flip side, the green leaf scenarios should only "order trump alone" if the player's team has 7 points or less. This is because if a team has 8 points, both players can play the round and can win 2 points, which would win the game.**
+
+**Not all the leafs should necessarily be followed all the time. For example, if there are 4 weak trump cards in hand, or an opponent is picking up a jack, maybe it would make more sense to order trump NOT alone instead of going alone.**
+
+**Finally, if someone is starting first and they have a good hand (using the turned up suit), but they have a better hand using another suit, they should opt to PASS. This is because they will have the first opportunity to bid for a suit that wasn't turned up. If another player makes a bid on the turned up suit, it's okay since they already have a decent hand for it.** 
+
+\
+
+### Evaluate results for the decision trees
+
+```{r, echo = FALSE}
+build_results(model = default.large.tree)
+build_results(model = default.pruned.tree)
+build_results(model = weighted.large.tree)
+build_results(model = weighted.pruned.tree)
+
+Build_metrics_table(default.large.tree)
+Build_metrics_table(default.pruned.tree)
+Build_metrics_table(weighted.large.tree)
+Build_metrics_table(weighted.pruned.tree)
+
+turn_up_tree_results = bind_rows(default.large.tree_stats, 
+                                   default.pruned.tree_stats,
+                                   weighted.large.tree_stats,
+                                   weighted.pruned.tree_stats)
+
+turn_up_tree_results %>%
+  kbl() %>%
+  kable_styling()
+```
+
+Although the **default** pruned tree looks to be the better model
+compared to the **weighted** pruned tree, it doesn't seem to have better
+classification logic compared to the weighted tree. For instance, the
+leaf in the default pruned tree that bids trump when there is one trump card seems like an awful
+decision in most cases. Furthermore, that model is very picky on
+classifying 2s while the weighted model does a better job of doing so.
+
+Since this model is for the first part of the bidding process, it would
+make sense to go with a less aggressive model (lower euchre % and higher
+missed call %) as players will have the chance to bid again on a
+different suit. Therefore, the **weighted pruned tree** model will be
+used.
+
+```{r}
+euchre_turn_up.tree = weighted.pruned.tree
+```
+
+\
+
+## Random Forest
+
+Ideally, this model can be used to determine which predictors are the
+most important and if the predictions align with the other created
+models.
+
+A random forest uses many decision trees and combines the outputs to
+reach a singular result. 
+
+```{r}
+euchre_turn_up.rf = randomForest(correct_call ~ ., data = euchre_turn_up_train, ntree = 300, mtry = 5, nodesize = 1, importance = TRUE)
+varImpPlot(euchre_turn_up.rf, type = 2)
+```
+
+The random forest importance plot shows that the top 6 most important
+predictors are the count of trump cards, the strongest card value, the
+count of non-trump aces, what the opponent picks up as the dealer, the
+count of distinct non-trump suits, and whether the Right Bower
+is present. This is consistent with the predictors selected in other
+models.
+
+\
+
+### Show random forest model performance
+
+```{r, echo = FALSE}
+build_results(model = euchre_turn_up.rf)
+Build_metrics_table(euchre_turn_up.rf)
+
+euchre_turn_up.rf_stats %>%
+  kbl() %>%
+  kable_styling()
+```
+
+From a glance, the result metrics don't seem to be vastly different than
+the other models. Therefore, it can be fair to assume that the insights found from the
+random forest model can be applied to the other models. 
+
+\
+
+## K Nearest Neighbors
+
+In order to build K nearest neighbors models, all the data needs to be
+numerical. In addition, it is important that all variables are
+normalized. This way, all variables carry the same amount of weight when
+making predictions.
+
+```{r}
+# Create dummy variables for categorical fields
+euchre_turn_up_train_w_dummies = dummy_cols(euchre_turn_up_train, select_columns = c("Broad_Start_Order", "broad_p_pick_up", "broad_opp_pick_up"), remove_selected_columns = TRUE)
+
+euchre_turn_up_test_w_dummies = dummy_cols(euchre_turn_up_test, select_columns = c("Broad_Start_Order", "broad_p_pick_up", "broad_opp_pick_up"), remove_selected_columns = TRUE)
+
+# Normalize all predictor variables so each value is between zero and one
+euchre_turn_up_train_w_dummies.norm = euchre_turn_up_train_w_dummies
+euchre_turn_up_test_w_dummies.norm = euchre_turn_up_test_w_dummies
+
+cols = colnames(euchre_turn_up_train_w_dummies.norm[,-18])
+for(i in cols){
+  euchre_turn_up_train_w_dummies.norm[[i]] = (euchre_turn_up_train_w_dummies.norm[[i]] - min(euchre_turn_up_train_w_dummies[[i]]))/(max(euchre_turn_up_train_w_dummies[[i]]) - min(euchre_turn_up_train_w_dummies[[i]]))
+  euchre_turn_up_test_w_dummies.norm[[i]] = (euchre_turn_up_test_w_dummies.norm[[i]] - min(euchre_turn_up_train_w_dummies[[i]]))/(max(euchre_turn_up_train_w_dummies[[i]]) - min(euchre_turn_up_train_w_dummies[[i]]))
+}
+```
+
+\
+
+### K Nearest Neighbors with all variables
+
+```{r}
+# Create dataframe with unique observations to prevent excess number of ties
+distinct_euchre_turn_up_train_w_dummies.norm = unique(euchre_turn_up_train_w_dummies.norm)
+
+lg_loss_cost.df = data.frame(k=seq(26, 50, 1),
+                          loss_cost = rep(0, 25))
+# Look for which K value performs the best. Look for K values between 26-50 to use
+for(i in 1:25){
+  knn.pred = knn(distinct_euchre_turn_up_train_w_dummies.norm[,-18],
+                 euchre_turn_up_test_w_dummies.norm[,-18],
+                 cl = distinct_euchre_turn_up_train_w_dummies.norm$correct_call,
+                 k=i+25)
+  result.iter = results_test
+  result.iter$model_bid = knn.pred
+  lg_loss_cost.df[i,2] = find_loss_cost(result.iter, 'model_bid') # Record loss cost of model when testing for each K
+}
+# Use the average lowest loss cost value to get the best K value
+best_full_k = lg_loss_cost.df %>%
+  mutate(min_score = min(loss_cost)) %>%
+  filter(loss_cost == min_score) %>%
+  mutate(min_k = min(k)) %>%
+  filter(k == min_k)
+best_full_k = best_full_k$k
+
+# Build KNN model with the best performing K value
+euchre_turn_up.full.knn = knn(train = distinct_euchre_turn_up_train_w_dummies.norm[,-18],
+                              test = euchre_turn_up_test_w_dummies.norm[,-18],
+                              cl = distinct_euchre_turn_up_train_w_dummies.norm$correct_call,
+                              k=best_full_k)
+
+paste0('The best K for the full KNN model is ', best_full_k)
+```
+
+\
+
+### K Nearest Neighbors with the 6 most important variables from the random forest model
+
+```{r}
+# Use the top 6 rf variables
+top_rf_var = c('Count_Trump', 'Strongest_Card', 'Ace_count', 'Non_Trump_Suit_Count', 'Right_Bower', 'broad_opp_pick_up')
+euchre_turn_up_train_w_dummies.norm_subset = euchre_turn_up_train_w_dummies.norm %>%
+  select(matches(top_rf_var), 'correct_call')
+euchre_turn_up_test_w_dummies.norm_subset = euchre_turn_up_test_w_dummies.norm %>%
+  select(matches(top_rf_var), 'correct_call')
+
+distinct_euchre_turn_up_train_w_dummies.norm_subset = unique(euchre_turn_up_train_w_dummies.norm_subset)
+
+sm_loss_cost.df = data.frame(k=seq(26, 50, 1),
+                             loss_cost = rep(0, 25))
+# Look for which K value performs the best. Look for K values between 26-50 to use
+for(i in 1:25){
+  knn.pred = knn(distinct_euchre_turn_up_train_w_dummies.norm_subset[,-9],
+                 euchre_turn_up_test_w_dummies.norm_subset[,-9],
+                 cl = distinct_euchre_turn_up_train_w_dummies.norm_subset$correct_call,
+                 k=i+25)
+  result.iter = results_test
+  result.iter$model_bid = knn.pred
+  sm_loss_cost.df[i,2] = find_loss_cost(result.iter, 'model_bid') # Record loss cost of model when testing for each K
+}
+# Use the average lowest loss cost value to get the best K value
+best_small_k = sm_loss_cost.df %>%
+  mutate(min_score = min(loss_cost)) %>%
+  filter(loss_cost == min_score) %>%
+  mutate(min_k = min(k)) %>%
+  filter(k == min_k)
+best_small_k = best_small_k$k
+
+# Build KNN model with the best performing K value
+euchre_turn_up.small.knn = knn(train = distinct_euchre_turn_up_train_w_dummies.norm_subset[,-9],
+                              test = euchre_turn_up_test_w_dummies.norm_subset[,-9],
+                              cl = distinct_euchre_turn_up_train_w_dummies.norm_subset$correct_call,
+                              k=best_small_k)
+
+paste0('The best K for the small KNN model is ', best_small_k)
+```
+
+\
+
+### Evaluate performance of KNN models
+
+```{r, echo = FALSE}
+euchre_turn_up.full.knn_results = results_test
+euchre_turn_up.full.knn_results$model_bid = euchre_turn_up.full.knn
+Build_metrics_table_rslt_tbl(euchre_turn_up.full.knn_results, 'euchre_turn_up.full.knn', 'model_bid')
+
+euchre_turn_up.small.knn_results = results_test
+euchre_turn_up.small.knn_results$model_bid = euchre_turn_up.small.knn
+Build_metrics_table_rslt_tbl(euchre_turn_up.small.knn_results, 'euchre_turn_up.small.knn', 'model_bid')
+
+turn_up_knn_results = rbind(euchre_turn_up.full.knn_stats, euchre_turn_up.small.knn_stats)
+
+turn_up_knn_results %>%
+  kbl() %>%
+  kable_styling()
+```
+
+The full KNN model performs a lot better, so that will be used.
+
+```{r}
+turn_up_best_k = best_full_k
+```
+
+\
+
+## Discriminant Analysis
+
+The two types of discriminant analysis tested will be mixture
+discriminant analysis (MDA) and flexible discriminant analysis (FDA).
+
+**MDA** assumes that classes have a Gaussian mixture of sub classes.
+This means that there could be clusters that belong to the same class
+that are scattered in multiple different groups. This algorithm does a
+great job at identifying multiple areas in which a class has a high
+frequency of observations and predicts based on those patterns.
+
+**FDA** is similar to linear discriminant analysis, but it allows for
+non-linear combinations, making predictions more flexible. This is
+beneficial for variables that have non-linear relationships within each
+group.
+
+Discriminant analysis will be applied using the top 6 most important
+random forest predictors. This is for more capable model processing and
+so no NAs get included in subscripted assignments.
+
+```{r}
+euchre_turn_up_train_subset = euchre_turn_up_train %>%
+  select(matches(top_rf_var), 'correct_call')
+
+
+euchre_turn_up.mda = mda(correct_call ~., data = euchre_turn_up_train_subset)
+euchre_turn_up.fda = fda(correct_call ~., data = euchre_turn_up_train_subset)
+```
+
+\
+
+### Evaluate performance of discriminant analysis models
+
+```{r, echo = FALSE}
+results_mda = results_test
+results_mda$model_bid = predict(euchre_turn_up.mda, newdata = euchre_turn_up_test)
+
+Build_metrics_table_rslt_tbl(results_mda, 'euchre_turn_up.mda', 'model_bid')
+
+
+results_fda = results_test
+results_fda$model_bid = predict(euchre_turn_up.fda, newdata = euchre_turn_up_test)
+
+Build_metrics_table_rslt_tbl(results_fda, 'euchre_turn_up.fda', 'model_bid')
+
+turn_up_da_results = rbind(euchre_turn_up.mda_stats, euchre_turn_up.fda_stats)
+
+turn_up_da_results %>%
+  kbl() %>%
+  kable_styling()
+```
+
+The FDA model has better results and seems to fit the data better
+compared to the MDA model. Therefore, FDA will be used as the
+discriminant analysis model.
+
+```{r}
+euchre_turn_up.da = euchre_turn_up.fda
+```
+
+\
+
+## Two-Step Logistic Regression
+
+Every model made so far has been a multiclass model. Let's see how well
+2 integrated logistic regression models perform. This is a two-step
+process where the first logistic regression model will assume a binomial
+distribution and predict whether an observation is a 0 or 1. The
+predicted 1s are then filtered and another logistic regression model
+will assume another binomial distribution and predict whether those
+observations are 1s or 2s.
+
+Like the orm models, the cutoffs will either be decided by the class
+with the highest probability or a simulated cutoff value for both
+classes. Whichever cutoff method yields the better results for each best
+performing logistic regression model will be used.
+
+\
+
+#### Create the first cutoff value
+
+This is based on the distribution of hands classified as zero. Similar
+to making the orm cutoffs, data is randomly selected and the proportion
+of records classified as 0s are recorded. The cutoff value assigned will
+be Nth percentile of the logit made on a logistic regression model with
+all variables. N represents the proportion of records classified as 0s.
+The process is repeated 100 times and the average cutoff score is used.
+
+```{r, warning=FALSE}
+cutoff_1_list_lm = c()
+for(i in 1:100){
+  sample_index = sample(nrow(euchre_turn_up1), nrow(euchre_turn_up1) * 0.80) # Take 80% of data to test
+  euchre_turn_up_train_sample = euchre_turn_up1[sample_index, ]
+  full.logr1 = glm(correct_call ~ ., data = euchre_turn_up_train_sample, family = binomial)
+  pass_proportion = nrow(euchre_turn_up_train_sample[euchre_turn_up_train_sample$correct_call==0,])/nrow(euchre_turn_up_train_sample)
+  y = predict(full.logr1, type = 'response')
+  sample_cutoff_1_lm = quantile(y, pass_proportion)
+  cutoff_1_list_lm = append(cutoff_1_list_lm, sample_cutoff_1_lm)
+  
+}
+cutoff_1_lm = mean(cutoff_1_list_lm)
+```
+
+\
+
+#### Create the second cutoff value
+
+Using the 1st full logistic regression model and the 1st cutoff value
+that was calculated above, the data is filtered so only the records
+predicted as 1s are used to build the 2nd cutoff value. This 2nd
+cutoff value is created using the same process as above.
+
+```{r, warning=FALSE}
+cutoff_2_list_lm = c()
+full.logr1 = glm(correct_call ~ ., data = euchre_turn_up1, family = binomial)
+euchre_turn_up2 = euchre_turn_up1
+euchre_turn_up2$prediction = predict(full.logr1, type = 'response', newdata = euchre_turn_up2)
+for(i in 1:100){
+  sample_index = sample(nrow(euchre_turn_up2), nrow(euchre_turn_up2) * 0.80)
+  euchre_turn_up_train_sample = euchre_turn_up2[sample_index, ]
+  euchre_turn_up_train_sample = euchre_turn_up_train_sample[euchre_turn_up_train_sample$prediction >= cutoff_1_lm, ]
+  euchre_turn_up_train_sample = subset(euchre_turn_up_train_sample, select=-c(prediction))
+  full.logr2 = glm(correct_call ~ ., data = euchre_turn_up_train_sample, family = binomial)
+  loner_proportion = nrow(euchre_turn_up_train_sample[euchre_turn_up_train_sample$correct_call==2,])/nrow(euchre_turn_up_train_sample)
+  y = predict(full.logr2, type = 'response')
+  sample_cutoff_2_lm = quantile(y, loner_proportion)
+  cutoff_2_list_lm = append(cutoff_2_list_lm, sample_cutoff_2_lm)
+}
+cutoff_2_lm = mean(cutoff_2_list_lm)
+```
+
+\
+
+### Create first logistic regression models
+
+These models will be made using forward and backward stepwise
+regression, using AIC and BIC as the performance metrics.
+
+```{r, warning = FALSE, echo = TRUE, results='hide'}
+euchre_turn_up_train1 = euchre_turn_up_train
+euchre_turn_up_train1$correct_call1 = ifelse(euchre_turn_up_train1$correct_call == 0, 0, 1) # Assign new variable that converts 2s into 1s
+
+lm1.full = glm(correct_call1 ~. - correct_call, family = binomial, data = euchre_turn_up_train1)
+
+null.lm1 = glm(correct_call1 ~ 1, data = euchre_turn_up_train1)
+
+fwd.lm1.bic = step(null.lm1, scope = list(lower = null.lm1, upper = lm1.full), direction = "forward", k = log(nrow(euchre_turn_up_train1)))
+
+bwd.lm1.bic = step(lm1.full, direction = "backward", k = log(nrow(euchre_turn_up_train1)))
+
+fwd.lm1.aic = step(null.lm1, scope = list(lower = null.lm1, upper = lm1.full), direction = "forward")
+
+bwd.lm1.aic = step(lm1.full, direction = "backward")
+```
+
+```{r, echo = FALSE}
+build_lm1_metrics(lm1.full)
+build_lm1_metrics(fwd.lm1.bic)
+build_lm1_metrics(bwd.lm1.bic)
+build_lm1_metrics(fwd.lm1.aic)
+build_lm1_metrics(bwd.lm1.aic)
+
+lm1_models %>%
+  kbl() %>%
+  kable_styling()
+```
+
+The bwd.lm1.bic model with customized cutoff appears to be the best
+option here due its great results and simplicity (lowest BIC).
+
+```{r}
+bwd.lm1.bic
+```
+
+The 14 variables and their respective coefficients seem to make
+reasonable sense for the most part. 
+
+```{r}
+euchre_turn_up.lm1 = bwd.lm1.bic
+```
+
+\
+
+#### Preprocess the data so a new dataframe is created using only the observations predicted as 1s
+
+```{r}
+euchre_turn_up_train1 = euchre_turn_up_train
+euchre_turn_up_train1$correct_call1 = ifelse(euchre_turn_up_train1$correct_call == 0, 0, 1) # Preprocess data to create new variable that classifies 2s as 1s so the outcome is binary
+
+# Make predictions using the first logistic regression model
+logr1_results = euchre_all_test_turn_up
+logr1_results$model_bid = ifelse(predict(euchre_turn_up.lm1, newdata = logr1_results, type = 'response') < cutoff_1_lm, 0, 1)
+euchre_turn_up_train1$prediction1 = ifelse(predict(euchre_turn_up.lm1, type = 'response') < cutoff_1_lm, 0, 1) # Define predicted variables using custom-made cutoff value
+
+# Create new dataframe that has predicted 1s from model
+euchre_turn_up_train2 = euchre_turn_up_train1[euchre_turn_up_train1$prediction1 != 0, ]
+euchre_turn_up_train2 = subset(euchre_turn_up_train2, select=-c(correct_call1, prediction1))
+euchre_turn_up_train2$correct_call2 = ifelse(euchre_turn_up_train2$correct_call == 2, 1, 0)
+```
+
+\
+
+### Create second logistic regression models
+
+These models will also be made using forward and backward stepwise
+regression, using AIC and BIC as the performance metrics.
+
+```{r, warning=FALSE, echo = TRUE, results='hide'}
+lm2.full = glm(correct_call2 ~. - correct_call, family = binomial, data = euchre_turn_up_train2)
+
+null.lm2 = glm(correct_call2 ~ 1, data = euchre_turn_up_train2)
+
+fwd.lm2.bic = step(null.lm2, scope = list(lower = null.lm2, upper = lm2.full), direction = "forward", k = log(nrow(euchre_turn_up_train2)))
+
+bwd.lm2.bic = step(lm2.full, direction = "backward", k = log(nrow(euchre_turn_up_train2)))
+
+fwd.lm2.aic = step(null.lm2, scope = list(lower = null.lm2, upper = lm2.full), direction = "forward")
+
+bwd.lm2.aic = step(lm2.full, direction = "backward")
+```
+
+```{r, echo = FALSE}
+build_lm2_metrics(lm2.full)
+build_lm2_metrics(fwd.lm2.bic)
+build_lm2_metrics(bwd.lm2.bic)
+build_lm2_metrics(fwd.lm2.aic)
+build_lm2_metrics(bwd.lm2.aic)
+
+lm2_models %>%
+  kbl() %>%
+  kable_styling()
+```
+
+The lm2.full model with the default 0.5 cutoff will be used due to it having the best F1 score and accuracy when comparing all the models. There are a couple other models that have similar performance metrics with slightly fewer variables, but to a negligible extent. 
+
+```{r}
+lm2.full
+```
+
+Some of these variables and their respective coefficients seem to be reasonable. However, there are some coefficients that do not look right or are missing. This is most likely due to the fact that it can be more difficult for this model to differentiate between a good hand and a great hand. This could explain the lackluster performance metrics shown above. 
+
+
+```{r}
+euchre_turn_up.lm2 = lm2.full
+```
+
+\
+
+### Combine the results of the two logistic regression models and evaluate the result
+
+```{r}
+logr2_results = logr1_results[logr1_results$model_bid != 0, ]
+logr1_results = logr1_results[logr1_results$model_bid == 0, ]
+
+logr2_results$model_bid = ifelse(predict(euchre_turn_up.lm2, newdata = logr2_results, type = 'response') < 0.5, 1, 2)
+
+
+turn_up_results_two_lms = rbind(logr1_results[, c('correct_call', 'team_ind_tricks_won', 'team_tricks_won', 'alone_tricks_won', 'model_bid')], logr2_results[, c('correct_call', 'team_ind_tricks_won', 'team_tricks_won', 'alone_tricks_won', 'model_bid')])
+
+Build_metrics_table_rslt_tbl(turn_up_results_two_lms, 'euchre_turn_up.2lm', 'model_bid')
+
+euchre_turn_up.2lm_stats %>%
+  kbl() %>%
+  kable_styling()
+```
+
+This method also does a good job with classification.
+
+\
+
+## Create dataframe that makes predictions using all 7 of the best algorithms analyzed
+
+The goal is to compare how each of the best algorithms perform and to
+determine if combining all these models together would yield
+significantly better results.
+
+```{r, warning=FALSE}
+# Build logistic regression results
+euchre_2lm_prediction1 = euchre_all_test_turn_up
+euchre_2lm_prediction1$two_lm_bid = ifelse(predict(euchre_turn_up.lm1, newdata = euchre_all_test_turn_up, type = 'response') < cutoff_1_lm, 0, 1)
+euchre_2lm_prediction2 = euchre_2lm_prediction1[euchre_2lm_prediction1$two_lm_bid == 1,]
+euchre_2lm_prediction1 = euchre_2lm_prediction1[euchre_2lm_prediction1$two_lm_bid == 0,]
+euchre_2lm_prediction2$two_lm_bid = ifelse(predict(euchre_turn_up.lm2, newdata = euchre_2lm_prediction2, type = 'response') < 0.5, 1, 2)
+euchre_test_predictions = rbind(euchre_2lm_prediction1, euchre_2lm_prediction2)
+
+# Build ordinal regression results
+euchre_test_predictions$orm_bid = predict(euchre_turn_up.orm, newdata = euchre_test_predictions, type = 'lp')
+euchre_test_predictions = euchre_test_predictions %>%
+  mutate(orm_bid = case_when(orm_bid<=cutoff_1~0, orm_bid<=cutoff_2~1, TRUE~2))
+
+# Build multinomial results
+euchre_test_predictions$multinom_bid = as.numeric(predict(euchre_turn_up.multinom, newdata = euchre_test_predictions))-1
+
+# Build decision tree results
+euchre_test_predictions$tree_bid = as.numeric(predict(euchre_turn_up.tree, newdata = euchre_test_predictions, type = 'class'))-1
+
+# Build random forest results
+euchre_test_predictions$random_forest_bid = as.numeric(predict(euchre_turn_up.rf, newdata = euchre_test_predictions, type = 'class'))-1
+
+# Build K nearest neighbors results
+euchre_test_predictions_w_dummies = dummy_cols(euchre_test_predictions, select_columns = c("Broad_Start_Order", "broad_ind_pick_up", "broad_p_pick_up", "broad_opp_pick_up"), remove_selected_columns = TRUE)
+
+euchre_test_predictions_w_dummies = euchre_test_predictions_w_dummies %>% 
+  select(-matches('_bid'), -matches('_tricks_won'), -'predicted_call')
+
+
+cols = colnames(euchre_test_predictions_w_dummies[,-18])
+for(i in cols){
+  euchre_test_predictions_w_dummies[[i]] = (euchre_test_predictions_w_dummies[[i]] - min(euchre_turn_up_train_w_dummies[[i]]))/(max(euchre_turn_up_train_w_dummies[[i]]) - min(euchre_turn_up_train_w_dummies[[i]]))
+}
+euchre_test_predictions$knn_bid = as.numeric(knn(train = distinct_euchre_turn_up_train_w_dummies.norm[,-18],
+                                      test = euchre_test_predictions_w_dummies[,-18],
+                                      cl=distinct_euchre_turn_up_train_w_dummies.norm$correct_call,
+                                      k=turn_up_best_k))-1
+
+# Build discriminant analysis results
+euchre_test_predictions$da_bid = as.numeric(predict(euchre_turn_up.da, newdata = euchre_test_predictions))-1
+
+# Take average score of all model predictions for an observation and assign value as ensemble bid
+euchre_test_predictions$top_bid = round((euchre_test_predictions$two_lm_bid +
+                                          euchre_test_predictions$orm_bid +
+                                          euchre_test_predictions$multinom_bid +
+                                          euchre_test_predictions$tree_bid +
+                                          euchre_test_predictions$random_forest_bid + 
+                                           euchre_test_predictions$knn_bid + 
+                                           euchre_test_predictions$da_bid)/7, 0)
+
+```
+
+\
+
+### Create results table to see which top algorithms perform the best
+
+```{r, echo = FALSE}
+Build_metrics_table_rslt_tbl(euchre_test_predictions, 'euchre_turn_up.Intuition', 'predicted_call')
+Build_metrics_table_rslt_tbl(euchre_test_predictions, 'euchre_turn_up.2lm', 'two_lm_bid')
+Build_metrics_table_rslt_tbl(euchre_test_predictions, 'euchre_turn_up.orm', 'orm_bid')
+Build_metrics_table_rslt_tbl(euchre_test_predictions, 'euchre_turn_up.multinom', 'multinom_bid')
+Build_metrics_table_rslt_tbl(euchre_test_predictions, 'euchre_turn_up.tree', 'tree_bid')
+Build_metrics_table_rslt_tbl(euchre_test_predictions, 'euchre_turn_up.rf', 'random_forest_bid')
+Build_metrics_table_rslt_tbl(euchre_test_predictions, 'euchre_turn_up.knn', 'knn_bid')
+Build_metrics_table_rslt_tbl(euchre_test_predictions, 'euchre_turn_up.da', 'da_bid')
+Build_metrics_table_rslt_tbl(euchre_test_predictions, 'euchre_turn_up.Ensemble', 'top_bid')
+
+euchre_turn_up_model_performance = bind_rows(euchre_turn_up.Intuition_stats,
+                                             euchre_turn_up.2lm_stats,
+                                             euchre_turn_up.orm_stats,
+                                             euchre_turn_up.multinom_stats,
+                                             euchre_turn_up.tree_stats,
+                                             euchre_turn_up.rf_stats,
+                                             euchre_turn_up.knn_stats,
+                                             euchre_turn_up.da_stats,
+                                             euchre_turn_up.Ensemble_stats)
+
+euchre_turn_up_model_performance %>%
+  kbl() %>%
+  kable_styling()
+```
+
+From a glance, it is obvious that every single model above has drastic
+improvement over the default personal method of bidding trump. The
+practical tree model that can be used in a real-life Euchre game has the
+worst accuracy out of all the models, but even that still performs way
+better than the default method.
+
+The ensemble model that combines all 7 models performs the best, but not
+by much. In comparison to each individual model, it has the best accuracy and the best loss cost.
+
+The ordinal regression, multinomial regression, and 2-step logistic regression models all
+perform the best, although they are not very interpretative. Any of these
+models can be integrated in a Euchre computer application to decide if,
+what, and how to bid trump.
+
+\
+
+## Model testing on new data
+
+For this next test, a new Euchre dataset will be used to assess the
+performance of the selected models on new, unseen data. Since this data
+is likely similar and probably has some matching observations to the
+training data, the model that performs the best on the training data
+will be used. The tree model will also be used because it is
+interpretive.
+
+When comparing the model performances on the new test data, there will
+be 3 methods tested.
+
+1.  The personal method (as a baseline)
+
+2.  The decision tree model (it is interpretive and can be used in
+    real-life Euchre games)
+
+3.  The multinomial model (out of the 7 individual models, it has the
+    second highest F1 and accuracy scores, and the best loss cost score.
+    It is also simpler to use.)
+
+\
+
+### Read in new validation data with 50,000 generated hands to test selected models on unseen data
+
+```{r}
+new_euchre_turn_up = read.csv('euchre_turn_up_stats_test.csv')
+```
+
+#### Prepare and modify target and predictor variables
+
+```{r}
+new_euchre_turn_up$predicted_call = replace(new_euchre_turn_up$predicted_call, new_euchre_turn_up$predicted_call == "Pass", 0)
+new_euchre_turn_up$predicted_call = replace(new_euchre_turn_up$predicted_call, new_euchre_turn_up$predicted_call == "Order Trump", 1)
+new_euchre_turn_up$predicted_call = replace(new_euchre_turn_up$predicted_call, new_euchre_turn_up$predicted_call == "Order Trump Alone", 2)
+new_euchre_turn_up$correct_call = replace(new_euchre_turn_up$correct_call, new_euchre_turn_up$correct_call == "Pass", 0)
+new_euchre_turn_up$correct_call = replace(new_euchre_turn_up$correct_call, new_euchre_turn_up$correct_call == "Order Trump", 1)
+new_euchre_turn_up$correct_call = replace(new_euchre_turn_up$correct_call, new_euchre_turn_up$correct_call == "Order Trump Alone", 2)
+
+new_euchre_turn_up$predicted_call = as.factor(new_euchre_turn_up$predicted_call)
+new_euchre_turn_up$correct_call = as.factor(new_euchre_turn_up$correct_call)
+```
+
+#### Preprocess the data the same way the training data was
+
+```{r}
+# Create the broad picked up variables that were used in the training set and convert characters to factors
+
+new_euchre_turn_up$ind_picked_up[new_euchre_turn_up$ind_picked_up == ''] = 'None'
+new_euchre_turn_up$p_picked_up[new_euchre_turn_up$p_picked_up == ''] = 'None'
+new_euchre_turn_up$opp_picked_up[new_euchre_turn_up$opp_picked_up == ''] = 'None'
+
+new_euchre_turn_up = new_euchre_turn_up %>%
+  mutate(broad_ind_pick_up = case_when(ind_picked_up == 'Jack' ~ 'Jack', 
+                                       ind_picked_up == 'None' ~ 'None', 
+                                       TRUE ~ 'Other'),
+         broad_p_pick_up = case_when(p_picked_up == 'Jack' ~ 'Jack', 
+                                       p_picked_up == 'None' ~ 'None', 
+                                       TRUE ~ 'Other'),
+         broad_opp_pick_up = case_when(opp_picked_up == 'Jack' ~ 'Jack', 
+                                       opp_picked_up == 'None' ~ 'None', 
+                                       TRUE ~ 'Other'))
+
+# Convert characters to factors
+new_euchre_turn_up$broad_ind_pick_up = factor(new_euchre_turn_up$broad_ind_pick_up, levels = c('None', 'Other', 'Jack'))
+new_euchre_turn_up$broad_p_pick_up = factor(new_euchre_turn_up$broad_p_pick_up, levels = c('None', 'Other', 'Jack'))
+new_euchre_turn_up$broad_opp_pick_up = factor(new_euchre_turn_up$broad_opp_pick_up, levels = c('None', 'Other', 'Jack'))
+new_euchre_turn_up$Broad_Start_Order = factor(new_euchre_turn_up$Broad_Start_Order, levels = c('First', 'Middle', 'Last'))
+```
+
+#### Remove variables that were not used at all in model building
+
+```{r}
+keep_variables = names(euchre_turn_up)
+new_euchre_turn_up = new_euchre_turn_up %>%
+  select(all_of(keep_variables))
+```
+
+\
+
+### Predict the target variable classes using the two selected models
+
+```{r}
+# tree
+new_euchre_turn_up$tree_pred = predict(euchre_turn_up.tree, newdata = new_euchre_turn_up, type = 'class')
+
+# multinomial
+new_euchre_turn_up$multinom_pred = predict(euchre_turn_up.multinom, newdata = new_euchre_turn_up, type = 'class')
+```
+
+\
+
+### Evaluate the performances of the 3 classification methods on the new data
+
+```{r}
+Build_metrics_table_rslt_tbl(new_euchre_turn_up, 'euchre_turn_up.Intuition_test', 'predicted_call')
+Build_metrics_table_rslt_tbl(new_euchre_turn_up, 'euchre_turn_up.tree_test', 'tree_pred')
+Build_metrics_table_rslt_tbl(new_euchre_turn_up, 'euchre_turn_up.multinom_test', 'multinom_pred')
+
+euchre_turn_up_validation_stats = bind_rows(euchre_turn_up.Intuition_test_stats,
+                                            euchre_turn_up.tree_test_stats,
+                                            euchre_turn_up.multinom_test_stats)
+euchre_turn_up_validation_stats %>%
+  kbl() %>%
+  kable_styling()
+```
+
+The multinomial model yields the best results, whereas the tree lags a
+little behind. However, the tree still does way better than the personal method. This
+means that I can win more Euchre games if I make bids using the tree
+model, instead of my own bidding method. This also means that a computer
+that makes bids using the multinomial model will be very difficult to
+beat if it gets half-decent cards.
+
+\
+
+## Bidding on the Turned Up Suit Conclusion
+
+Because the new data is similar to the training data, it makes sense
+that the model results are all similar. Since the data here will not be
+vastly different compared to what is seen in a real-life Euchre game, it can be
+concluded that these results are valid. Therefore, these machine learning models are able to be applied in Euchre games.
+
+From this research, it has been determined that machine learning can be
+used to improve the 1st part of the bidding process of a Euchre game.
+This is both at a practical level and at a more complex level.
+Furthermore, it is shown that deciding to pick up a card relies on a lot
+of variables, but mainly these 6: the count of trump cards, the
+strongest card in hand, the count of non-trump aces, the count of
+distinct non-trump suits in hand, whether the Right Bower is present in
+hand, and the card value an opponent would potentially pick up if prompted.
+
+\
+
+```{r, echo = FALSE}
+objects = ls()
+keep_objects = objects[str_detect(objects, 'turn_up')]
+rm(list = ls()[!(ls() %in% keep_objects)])
+```
+
+\
+
+# Part 2: Bidding on a Non-Turned Up Suit
+
+### Load in Euchre dataframe simulated in Python
+
+```{r}
+euchre_turn_down = read.csv('euchre_make_trump_stats_train.csv')
+head(euchre_turn_down) %>%
+  kbl() %>%
+  kable_styling()
+```
+
+\
+
+## Exploratory Data Analysis
+
+```{r}
+summary(euchre_turn_down)
+```
+
+All the numerical values have the correct distributions associated.
+There can only be 0 or 1 of each trump card in a hand because only 1 suit can be trump. Also, the non-trump cards all have values that range from 0-3 with the exception of jacks. This is because there can be 3 non-trump suits. There can only be 2 non-trump jacks because of the Right Bower and the Left Bower, which means that 2 jack values are always trump.
+
+There can only be 5 cards dealt to a hand and the algorithm picks the best suit in hand, which is why the "Count_Trump" values range from 1-5. In addition, there are 4
+suits in a card game and one of them will be trump. Therefore, the
+maximum number of non-trump suits in a hand is 3. This value can be as
+low as 0 if a player only has trump cards.
+
+All the other binary variables all have values that are either 0 or 1.
+
+All this information concludes that this dataset is perfectly clean.
+
+\
+
+#### Outcome variable and predicted outcome variable
+
+Here are the values that make up the target variable "correct_call"
+and the predicted target variable "predicted_call."
+
+**Order Trump Alone** - When a player has a hand with many cards that
+are the same suit, they can opt to "go alone." If they win all 5
+tricks, their team wins 4 points. If they win 3-4 tricks, their team
+gets 1 point. If they win less than 3 tricks, the other team wins 2
+points. A player should "Order Trump Alone" when they believe they can
+win all the tricks without help from their partner.
+
+**Order Trump** - When a player has a hand with a decent number of cards that are the same suit, they can opt to "order trump." They play the round with their partner and can win 2 points if they win all
+5 tricks, and 1 point if they win 3-4 tricks. If they win less than 3 tricks, the opposing team gets 2 points.
+
+**Pass** - A player will "pass" if they simply don't have a good hand
+that would win them a lot of tricks.
+
+\
+
+#### For simplicity, the target variables will get ordinal numerical imputations
+
+**Order Trump Alone - 2**
+
+**Order Trump - 1**
+
+**Pass - 0**
+
+```{r}
+euchre_turn_down$predicted_call = replace(euchre_turn_down$predicted_call, euchre_turn_down$predicted_call == "Pass", 0)
+euchre_turn_down$predicted_call = replace(euchre_turn_down$predicted_call, euchre_turn_down$predicted_call == "Order Trump", 1)
+euchre_turn_down$predicted_call = replace(euchre_turn_down$predicted_call, euchre_turn_down$predicted_call == "Order Trump Alone", 2)
+euchre_turn_down$correct_call = replace(euchre_turn_down$correct_call, euchre_turn_down$correct_call == "Pass", 0)
+euchre_turn_down$correct_call = replace(euchre_turn_down$correct_call, euchre_turn_down$correct_call == "Order Trump", 1)
+euchre_turn_down$correct_call = replace(euchre_turn_down$correct_call, euchre_turn_down$correct_call == "Order Trump Alone", 2)
+```
+
+```{r}
+euchre_turn_down$ind_picked_up[euchre_turn_down$ind_picked_up == ''] = 'None'
+euchre_turn_down$p_picked_up[euchre_turn_down$p_picked_up == ''] = 'None'
+euchre_turn_down$opp_picked_up[euchre_turn_down$opp_picked_up == ''] = 'None'
+```
+
+\
+
+#### View number of records that are associated with each output
+
+```{r}
+table(euchre_turn_down$correct_call)
+```
+
+The majority of records (\~59%) are good enough to make a bid on.
+
+\
+
+#### View handmade predictions
+
+```{r}
+table(euchre_turn_down$correct_call, euchre_turn_down$predicted_call, dnn=c('True', 'Pred'))
+```
+
+From this data, we can see that the vast majority of records are
+getting classified as zero. The handmade predictions, based on intuition,
+are not aggressive at bidding trump at all. It looks like there is a lot
+of room for improvement here.
+
+\
+
+#### Change data type of columns for plotting
+
+```{r}
+euchre_turn_down[,names(euchre_turn_down)] = lapply(euchre_turn_down[,names(euchre_turn_down)], as.factor)
+euchre_turn_down$Strength = as.integer(euchre_turn_down$Strength)
+```
+
+\
+
+#### Convert character variables to factors
+
+```{r}
+euchre_turn_down$ind_picked_up = factor(euchre_turn_down$ind_picked_up, levels = c('None', 'Nine', 'Ten', 'Queen', 'King', 'Ace', 'Jack'))
+euchre_turn_down$p_picked_up = factor(euchre_turn_down$p_picked_up, levels = c('None', 'Nine', 'Ten', 'Queen', 'King', 'Ace', 'Jack'))
+euchre_turn_down$opp_picked_up = factor(euchre_turn_down$opp_picked_up, levels = c('None', 'Nine', 'Ten', 'Queen', 'King', 'Ace', 'Jack'))
+euchre_turn_down$Broad_Start_Order = factor(euchre_turn_down$Broad_Start_Order, levels = c('First', 'Middle', 'Last'))
+```
+
+\
+
+### Show relationships between different variables and the correct call
+
+```{r}
+for(column in names(euchre_turn_down[,2:25])){
+  target = 'correct_call'
+  column_name = column
+  target_name = target
+  
+  
+  if(class(euchre_turn_down[,column])=='integer' | class(euchre_turn_down[,column])=='numeric'){
+    column = euchre_turn_down[, column]
+    target = euchre_turn_down[, target]
+    df = data.frame(column, target)
+    p = ggplot(df, aes(x = target, y = column)) + 
+      geom_boxplot() +
+      labs(x = target_name, y = column_name) +
+      coord_flip()
+    print(p)
+  }
+  else{
+    column = euchre_turn_down[, column]
+    target = euchre_turn_down[, target]
+    df = data.frame(column, target)
+    p = ggplot(df, aes(x = column, fill = target)) + 
+      ggtitle(paste('Proportion of', column_name, 'in each class')) +
+      geom_bar(position = position_fill(reverse=TRUE)) +
+      labs(x = column_name, y =' proportion', fill = target_name) +
+      coord_flip()
+
+    print(p)
+  }
+}
+# end plots
+```
+
+**Right Bower** - Better hands significantly tend to have the Right Bower more
+frequently than not.
+
+**Left Bower** - Better hands tend to have the Left Bower more
+frequently than not.
+
+**TAce** - Better hands slightly tend to have the trump ace more
+frequently than not.
+
+**TKing** - Better hands slightly tend to have the trump king more
+frequently than not.
+
+**TQueen** - Better hands slightly tend to have the trump queen more
+frequently than not.
+
+**TTen** - Better hands slightly tend to have the trump ten more
+frequently than not.
+
+**TNine** - Better hands slightly tend to have the trump nine more
+frequently than not.
+
+**Ace_count** - Better hands tend to have at least one non-trump ace.
+
+**King_count** - Worse hands slightly tend to have more non-trump kings.
+
+**Queen_count** - Worse hands tend to have more non-trump queens.
+
+**Jack_Count** - Better hands tend to have at least one non-trump jack in hand.
+
+**Ten_count** - Worse hands significantly tend to have more non-trump
+tens.
+
+**Nine_count** - Worse hands significantly tend to have more non-trump
+nines.
+
+**Count_Trump** - Having more trump cards is significantly more frequent
+in better hands.
+
+**Strength** - Hands that go alone tend to be stronger while hands that
+pass tend to have lower strength. This variable is the sum of the
+assigned strength values of all cards in hand. It is difficult to calculate in a real-life game, so it will get
+removed.
+
+**Non_Trump_Suit_Count** - Better hands tend to have less non-trump
+suits in hand.
+
+**Non_Trump_Turned_Down_Ind** - There seems to be no effect on bidding a trump suit that is the same color as the turned down suit.
+
+**Start_Order** - There is no apparent relationship between the initial start order and how well the respective hand performs.
+
+**Dealer** - Being the dealer does not seem to make an impact on the round outcome.
+
+**Strongest_Card** - Hands where the strongest card is 12 or 13 (Left or
+Right Bower present) seem to be indicative of positive results.
+
+**Broad_Start_Order** - The initial broad starting order doesn't seem to impact the round results. However, starting last tends to provide a slight advantage.
+
+**ind_picked_up** - No cards were picked up in this simulation, so this variable is irrelevant.
+
+**p_picked_up** - No cards were picked up in this simulation, so this variable is irrelevant.
+
+**opp_picked_up** - No cards were picked up in this simulation, so this variable is irrelevant.
+
+\
+
+#### Remove irrelevant columns
+
+The following columns were removed: Suit, Strength, Start_Order, ind_pick_up, p_pick_up, opp_pick_up, 
+
+```{r}
+euchre_turn_down = euchre_turn_down[, -c(1, 16, 19, 23:25)]
+```
+
+\
+
+#### Create new dataframe that removes variables that are involved with the target variable (they create leakage)
+
+Variables removed: team_ind_tricks_won, team_tricks_won,
+alone_tricks_won, predicted_call
+
+Also, numerical variables are converted back to integers.
+
+```{r}
+euchre_turn_down[,names(euchre_turn_down[,-c(19, 23:24)])] = lapply(euchre_turn_down[,names(euchre_turn_down[,-c(19, 23:24)])], as.character)
+euchre_turn_down[,names(euchre_turn_down[,-c(19, 23:24)])] = lapply(euchre_turn_down[,names(euchre_turn_down[,-c(19, 23:24)])], as.integer)
+euchre_turn_down1 = euchre_turn_down[, -c(20:23)]
+```
+
+\
+
+### Split euchre dataset into training and validation data to build models 
+
+80% of the dataset will be for training while 20% will be for validation.
+
+```{r}
+set.seed(1)
+sample_index = sample(nrow(euchre_turn_down1), nrow(euchre_turn_down1) * 0.80)
+euchre_turn_down_train = euchre_turn_down1[sample_index, ]
+euchre_turn_down_test = euchre_turn_down1[-sample_index, ]
+euchre_turn_down_results = euchre_turn_down[, 20:24] # dataframe that only has result columns
+results_train = euchre_turn_down_results[sample_index, ]
+results_test = euchre_turn_down_results[-sample_index, ]
+euchre_all_test_turn_down = euchre_turn_down[-sample_index, ]
+```
+
+\
+
+## Create functions that will be used to measure success of models
+
+Here is what the functions do:
+
+**build_results** - This predicts the correct call from a built model and creates a dataframe that stores the predictions. The other functions use the dataframe made from this. 
+
+**find_loss_cost** - This calculates the points that were failed to be earned
+when the model makes a call that is different than what should have been
+called. For each record, the potential number of points won (given the
+correct call was made) is calculated. The possible numbers in this field
+are 0 (because it is impossible to win any points when no bid should be made), 1, 2, and 4. Another field is added that calculates the points
+earned based off the model prediction. The numbers could be -2 (for
+hands that predicted 1 or 2 but were actually 0). They can also be 0
+(predicted class is 0), 1, 2, and 4. A field gets made that calculates
+the absolute difference. The average number in this field is the loss
+cost value. There is also a feature included that records the average loss cost
+value at every misclassification type.
+
+**Get_Macro_AUC** - This calculates the area under the curve for each of the 3
+classes. The average is calculated from these 3 classes.
+
+**Macro_F1_Score_Compute** - This calculates the F1 score for each of the 3
+predictor classes. The average is calculated from these 3 classes.
+
+**Model_Accuracy** - This measures the number of records that were correctly
+classified divided by the total number of records. 
+
+**Get_Euchre_Call_Percent** - This takes the number of records that are predicted as 1s and 2s but are actually 0s. This number gets divided
+by the total number of records predicted as 1s and 2s. The output is the
+percent of bids made that get euchred.
+
+**Get_Missed_Call_Percent** - This takes the number of records that are
+predicted as 0s but are actually 1s and 2s. This number gets divided by
+the total number of records predicted as 0s. Essentially, this is the
+proportion of records that don't get bid trump when they actually should
+have.
+
+**binary_F1Score** - This calculates the F1 score for binary prediction classes.
+
+**build_lm1_metrics** - This assesses results provided from a binary logistic regression model.
+
+**build_lm2_metrics** - This assesses results provided from a second version of a binary logistic regression model.
+
+**Build_metrics_table** - This uses a provided model and results table to create a new dataframe that measures the calculated metrics defined above.
+
+**Build_metrics_table_rslt_tbl** - This uses a provided results table to create a new dataframe that measures the calculated metrics defined above (except Macro AUC).
+
+
+```{r}
+build_results = function(results_df = results_test, model){
+  if(model$call[[1]] == 'orm'){
+    x = predict(model, newdata = euchre_turn_down_test, type = 'fitted.ind')
+    results_df$lp_score = predict(model, newdata = euchre_turn_down_test, type = 'lp')
+    results_df = results_df %>%
+      mutate(adj_model_bid = case_when(lp_score<=cutoff_1~0, lp_score<=cutoff_2~1, TRUE~2))
+  }
+  else {
+    x = predict(model, newdata = euchre_turn_down_test, type = 'prob')
+  }
+  x = as.data.frame(x)
+  names(x)[1] = 'p_zero'
+  names(x)[2] = 'p_one'
+  names(x)[3] = 'p_two'
+  results_df = cbind(results_df, x)
+  results_df = results_df %>%
+    mutate(best = pmax(p_zero, p_one, p_two),
+           model_bid = case_when(p_zero == best~0, p_one == best~1, TRUE~2))
+  assign(paste0('results_', deparse(substitute(model))), results_df, envir=.GlobalEnv)
+}
+
+find_loss_cost = function(df, test_column, return_avg_cost = TRUE, save_ind_costs = FALSE){
+  df = df %>%
+    mutate(potential_points_earned = case_when((team_tricks_won >= 3 & team_tricks_won < 5 & alone_tricks_won <5)~1, 
+                                               (team_tricks_won == 5 & alone_tricks_won != 5)~2,
+                                               (alone_tricks_won == 5)~4, TRUE~0),
+           points_won = case_when((get(test_column) == 1 & team_tricks_won <3)~-2,
+                                  (get(test_column) == 2 & alone_tricks_won <3)~-2,
+                                  (get(test_column) == 1 & team_tricks_won >= 3 & team_tricks_won < 5)~1,
+                                  (get(test_column) == 2 & alone_tricks_won >= 3 & alone_tricks_won < 5)~1,
+                                  (get(test_column) == 1 & team_tricks_won == 5)~2,
+                                  (get(test_column) == 2 & alone_tricks_won == 5)~4, TRUE~0),
+           loss_cost = abs(points_won - potential_points_earned))
+  if(save_ind_costs == TRUE){
+    p0_a1 = mean(df[(df[, test_column] == 0 & df$correct_call == 1),]$loss_cost)
+    p0_a2 = mean(df[(df[, test_column] == 0 & df$correct_call == 2),]$loss_cost)
+    p1_a0 = mean(df[(df[, test_column] == 1 & df$correct_call == 0),]$loss_cost)
+    p1_a2 = mean(df[(df[, test_column] == 1 & df$correct_call == 2),]$loss_cost)
+    p2_a0 = mean(df[(df[, test_column] == 2 & df$correct_call == 0),]$loss_cost)
+    p2_a1 = mean(df[(df[, test_column] == 2 & df$correct_call == 1),]$loss_cost)
+    assign('p0_a1', p0_a1, envir = .GlobalEnv)
+    assign('p0_a2', p0_a2, envir = .GlobalEnv)
+    assign('p1_a0', p1_a0, envir = .GlobalEnv)
+    assign('p1_a2', p1_a2, envir = .GlobalEnv)
+    assign('p2_a0', p2_a0, envir = .GlobalEnv)
+    assign('p2_a1', p2_a1, envir = .GlobalEnv)
+  }
+  
+  if(return_avg_cost == TRUE){
+    return(mean(df$loss_cost))
+  }
+}
+
+Get_Macro_AUC = function(df){
+  p_pass = df$p_zero
+  p_order_trump = df$p_one
+  p_go_alone = df$p_two
+  bid.dummy = dummy_cols(df,
+                           select_columns = "correct_call",
+                           remove_first_dummy = FALSE,
+                           remove_selected_columns = TRUE)
+  pred0 = prediction(p_pass, bid.dummy$correct_call_0)
+  perf0 = performance(pred0, "tpr", "fpr")
+  #plot(perf1, colorize=F, print.cutoffs.at=seq(.1, by=.1))
+  AUC_0 = slot(performance(pred0, "auc"), "y.values")[[1]]
+  
+  pred1 = prediction(p_order_trump, bid.dummy$correct_call_1)
+  perf1 = performance(pred1, "tpr", "fpr")
+  #plot(perf1, colorize=F, print.cutoffs.at=seq(.1, by=.1))
+  AUC_1 = slot(performance(pred1, "auc"), "y.values")[[1]]
+  
+  pred2 = prediction(p_go_alone, bid.dummy$correct_call_2)
+  perf2 = performance(pred2, "tpr", "fpr")
+  #plot(perf1, colorize=F, print.cutoffs.at=seq(.1, by=.1))
+  AUC_2 = slot(performance(pred2, "auc"), "y.values")[[1]]
+  
+  return((AUC_0+AUC_1+AUC_2)/3)
+}
+
+Macro_F1_Score_Compute = function(correct_vector, predicted_vector){
+  matrix = table(correct_vector, predicted_vector)
+  F1_0 = matrix[1]/(matrix[1]+matrix[2]+matrix[3]+matrix[4]+matrix[7])
+  F1_1 = matrix[5]/(matrix[2]+matrix[5]+matrix[8]+matrix[4]+matrix[6])
+  F1_2 = matrix[9]/(matrix[3]+matrix[6]+matrix[9]+matrix[7]+matrix[8])
+  
+  return((F1_0+F1_1+F1_2)/3)
+}
+
+Model_Accuracy = function(correct_vector, predicted_vector){
+  matrix = table(correct_vector, predicted_vector)
+  num_correct = matrix[1]+matrix[5]+matrix[9]
+  total = matrix[1]+matrix[2]+matrix[3]+matrix[4]+matrix[5]+matrix[6]+matrix[7]+matrix[8]+matrix[9]
+  return(num_correct/total)
+}
+  
+Get_Euchre_Call_Percent = function(correct_vector, predicted_vector){
+  matrix = table(correct_vector, predicted_vector)
+  num_euchred = matrix[4]+matrix[7]
+  total = matrix[4]+matrix[5]+matrix[6]+matrix[7]+matrix[8]+matrix[9]
+  return(num_euchred/total)
+}
+
+Get_Missed_Call_Percent = function(correct_vector, predicted_vector){
+  matrix = table(correct_vector, predicted_vector)
+  missed_calls = matrix[2] + matrix[3]
+  total = matrix[1] + matrix[2] + matrix[3]
+  return(missed_calls/total)
+}
+
+binary_F1Score = function(matrix){
+  precision = matrix[4]/(matrix[4]+matrix[3])
+  recall = matrix[4]/(matrix[4]+matrix[2])
+  score = round((2*precision*recall)/(precision+recall), 4)
+}
+
+build_lm1_metrics = function(model){
+  logr1_results = euchre_all_test_turn_down
+  logr1_results$correct_call1 = ifelse(logr1_results$correct_call == 0, 0, 1)
+  logr1_results$model_prediction = ifelse(predict(model, newdata = logr1_results, type =
+                                                         'response') <.5, 0, 1)
+  logr1_results$model_adj_prediction = ifelse(predict(model, newdata = logr1_results,
+                                                           type = 'response') < cutoff_1_lm, 0, 1)
+  matrix = table(logr1_results$correct_call1, logr1_results$model_prediction, dnn= c("True", "Pred"))
+
+  matrix_adj = table(logr1_results$correct_call1, logr1_results$model_adj_prediction, dnn = c("True", "Pred"))
+  
+  Name = deparse(substitute(model))
+  Accuracy = round((matrix[1]+matrix[4])/sum(matrix), 4)
+  F1_Score = binary_F1Score(matrix)
+  Accuracy_adj = round((matrix_adj[1]+matrix_adj[4])/sum(matrix_adj), 4)
+  F1_Score_adj = binary_F1Score(matrix_adj)
+  BIC = BIC(model)
+  AIC = AIC(model)
+  
+  model_df = data.frame(Name, Accuracy, F1_Score, Accuracy_adj, F1_Score_adj, BIC, AIC)
+  assign('model_df', model_df, envir=.GlobalEnv)
+  if(exists('lm1_models')){
+    lm1_models = rbind(lm1_models, model_df)
+  } else {
+    lm1_models = model_df
+  }
+  assign('lm1_models', lm1_models, envir=.GlobalEnv)
+  rm(model_df)
+}
+
+build_lm2_metrics = function(model){
+  logr2_results = euchre_all_test_turn_down
+  logr2_results$correct_call2 = ifelse(logr2_results$correct_call == 0, 0, 1)
+  logr2_results$model_prediction = ifelse(predict(model, newdata = logr2_results, type =
+                                                         'response') <.5, 0, 1)
+  logr2_results$model_adj_prediction = ifelse(predict(model, newdata = logr2_results,
+                                                           type = 'response') < cutoff_2_lm, 0, 1)
+  matrix = table(logr2_results$correct_call2, logr2_results$model_prediction, dnn= c("True", "Pred"))
+
+  matrix_adj = table(logr2_results$correct_call2, logr2_results$model_adj_prediction, dnn = c("True", "Pred"))
+  
+  Name = deparse(substitute(model))
+  Accuracy = round((matrix[1]+matrix[4])/sum(matrix), 4)
+  F1_Score = binary_F1Score(matrix)
+  Accuracy_adj = round((matrix_adj[1]+matrix_adj[4])/sum(matrix_adj), 4)
+  F1_Score_adj = binary_F1Score(matrix_adj)
+  BIC = BIC(model)
+  AIC = AIC(model)
+  
+  model_df = data.frame(Name, Accuracy, F1_Score, Accuracy_adj, F1_Score_adj, BIC, AIC)
+  assign('model_df', model_df, envir=.GlobalEnv)
+  if(exists('lm2_models')){
+    lm2_models = rbind(lm2_models, model_df)
+  } else {
+    lm2_models = model_df
+  }
+  assign('lm2_models', lm2_models, envir=.GlobalEnv)
+  rm(model_df)
+}
+
+Build_metrics_table = function(model){
+  model_name = deparse(substitute(model))
+  results_table = get(paste0('results_', model_name))
+  df = data.frame(model_name = model_name)
+  
+  df$loss_cost = find_loss_cost(results_table, 'model_bid')
+  df$macro_auc = Get_Macro_AUC(results_table)
+  df$macro_f1 = Macro_F1_Score_Compute(results_table$correct_call,
+                                       results_table$model_bid)
+  df$accuracy = Model_Accuracy(results_table$correct_call,
+                               results_table$model_bid)
+  df$p_euchred_calls = Get_Euchre_Call_Percent(results_table$correct_call,
+                                               results_table$model_bid)
+  df$p_missed_calls = Get_Missed_Call_Percent(results_table$correct_call,
+                                              results_table$model_bid)
+    
+  if(model$call[[1]] == 'orm'){
+    df$adj_loss_cost = find_loss_cost(results_table, 'adj_model_bid')
+    df$adj_macro_f1 = Macro_F1_Score_Compute(results_table$correct_call,
+                                             results_table$adj_model_bid)
+    df$adj_accuracy = Model_Accuracy(results_table$correct_call,
+                                     results_table$adj_model_bid)
+    df$adj_p_euchred_calls = Get_Euchre_Call_Percent(results_table$correct_call,
+                                                     results_table$adj_model_bid)
+    df$adj_p_missed_calls = Get_Missed_Call_Percent(results_table$correct_call,
+                                                    results_table$adj_model_bid)
+    df$BIC = BIC(model)
+    df$AIC = AIC(model)
+    df$num_predictors = length(model$assign)
+  }
+  if(model$call[[1]] == 'multinom'){
+    df$BIC = BIC(model)
+    df$AIC = AIC(model)
+  }
+  assign(paste0(deparse(substitute(model)), '_stats'), df, envir=.GlobalEnv)
+}
+
+Build_metrics_table_rslt_tbl = function(results_table, table_name, result_variable_name){
+  df = data.frame(model_name = table_name)
+  
+  df$loss_cost = find_loss_cost(results_table, result_variable_name)
+  df$macro_f1 = Macro_F1_Score_Compute(results_table$correct_call,
+                                       results_table[,result_variable_name])
+  df$accuracy = Model_Accuracy(results_table$correct_call,
+                               results_table[,result_variable_name])
+  df$p_euchred_calls = Get_Euchre_Call_Percent(results_table$correct_call,
+                                               results_table[,result_variable_name])
+  df$p_missed_calls = Get_Missed_Call_Percent(results_table$correct_call,
+                                              results_table[,result_variable_name])
+  assign(paste0(table_name, '_stats'), df, envir=.GlobalEnv)
+}
+
+```
+
+\
+
+## Create and determine the best models
+
+There are 6 of many algorithms that have been proven to work well with
+multiclass outputs:
+
+**ordinal regression** - Through the rms library, the orm (ordinal regression model) function is great for multiclass predictions when the
+target variable is ordinal and the predictor variables are nominal.
+This is the case here as the best hands are classified as 2s while the
+worst hands are classified as 0s, in an ordinal fashion. The orm function
+outputs a linear predictor value that can be referred as a log odds
+value. The function can also make predictions based on the probability
+that a record could be in a class. **For this analysis, both prediction methods will be explored.** This model is set up so each variable
+measured has one predictor coefficient and 2 intercepts which measure
+two predicted classes.
+
+**multinomial regression** - This is a form of logistic regression used
+when the outcome variable is not necessarily ordinal. It can be used through the
+multinom function though the nnet library. The algorithm creates
+separate coefficient values for each predicted class, except for a class
+which is set as the default. In this case, there will be two sets of
+coefficients used to create two logit values for the classes that will
+be converted to p-values. The p-value of the class not calculated is 1 -
+the sum of the p-values of the other two classes. The class with the
+highest p-value gets predicted.
+
+**classification tree** - This is the most interpretative algorithm that
+can be best used when playing Euchre in real-time. It can be
+used through the rpart function from the rpart library. The algorithm
+predicts what call to make based on a few conditions and breaks up the
+tree into different leafs. The classification decision is based on which
+classifier has the most training records in a specific leaf.
+
+**random forest** - This is similar to classification trees, but this
+algorithm trains on many trees and the result gets averaged together. It
+can be used though the randomForest function from the randomForest
+library. Although useless to interpret in real-time, the results of this
+algorithm can measure variable importance. This is useful to
+determine which variables directly make a hand good enough to be classified as a
+1 or 2.
+
+**k nearest neighbors** - This algorithm takes a defined number of observations that are most similar to a to-be-predicted observation and uses those similar observations to predict the outcome class of the new observation. The highest number of a specific outcome class found in the defined "most similar" number of observations will be assigned to the new observation. Tiebreakers are randomly done. This is done using the fnn library. 
+
+**discriminant analysis** - This method finds a linear combination of variables that will then be used to separate all the different outcome classes, similar to clustering. An observed record will get classified based on which group it fits closest to. This is done using the mda library. 
+
+\
+
+In addition, logistic regression (used to predict a binary outcome) will be used twice and together to predict the 3 different classes. 
+
+**two-step logistic regression** - This method will use a logistic regression algorithm to classify the dataset as 0s or 1s (pass or bid). From there, the variables classified as 1s will go through a separate logistic regression algorithm to classify the records as 1s or 2s (bid or bid & go alone). The 2 algorithms chosen will be be assessed on how well they perform on their own. Once they are chosen, they will be integrated together to make multiclass predictions. This is done using the stats library to create multiple GLMs, using the binomial family.
+
+\
+
+## Ordinal Regression
+
+Using the orm function from rms, results can be predicted in a few ways.
+They can be based on which class has the highest p-value. They can also be
+based on different cutoff values that get manually set for the linear
+predictor scores. This analysis will measure if cutoffs based on
+probability are more effective than manually setting cutoff scores.
+
+\
+
+#### Approximate the 2 cutoff values
+
+These created cutoff values will be the linear predictor logit scores
+that will split the prediction classes. The goal is to fit the data
+so the estimated proportion of data that falls into each class matches
+the proportion of each class in the training data. This method is fine
+to use because the high volume of training data observations are similar to any new data the model will analyze.
+
+To approximate the logit cutoff values, the entire training dataset was
+used. 80% of the data was sampled and the proportion of records that
+were of class values 0 and 1 were derived for that sampled dataset. The
+first cutoff value was derived by taking the quantile of the proportion
+of records classified as 0 for the linear predictor scores. The
+second cutoff value was derived by taking the quantile of the proportion
+of records classified as 0 or 1 for the linear predictor scores.
+
+For instance, if 30% of the random data was class 0 and 60% of the
+random data was class 1, the estimated cutoffs would be the lp scores at
+the 30th percentile and the 90th percentile.
+
+This process gets repeated 100 times so 100 values get assigned for each
+cutoff score iteration. The final cutoff scores are the averages of each iteration. 
+
+These values will be applied to all the orm models created because the
+lp distributions will be similar and this is the most convenient way of
+making cutoffs.
+
+\
+
+#### Create cutoff estimates that best fit the data
+
+```{r, warning=FALSE}
+cutoff_1_list = c()
+cutoff_2_list = c()
+for(i in 1:100){
+  sample_index = sample(nrow(euchre_turn_down1), nrow(euchre_turn_down1) * 0.80)
+  euchre_turn_down_train_sample = euchre_turn_down1[sample_index, ]
+  full.orm = orm(correct_call ~ ., data = euchre_turn_down_train_sample)
+  pass_proportion = nrow(euchre_turn_down_train_sample[euchre_turn_down_train_sample$correct_call==0,])/nrow(euchre_turn_down_train_sample)
+  order_trump_proportion = nrow(euchre_turn_down_train_sample[euchre_turn_down_train_sample$correct_call==1,])/nrow(euchre_turn_down_train_sample)
+  y = predict(full.orm)
+  sample_cutoff_1 = quantile(y, pass_proportion)
+  sample_cutoff_2 = quantile(y, pass_proportion+order_trump_proportion)
+  cutoff_1_list = append(cutoff_1_list, sample_cutoff_1)
+  cutoff_2_list = append(cutoff_2_list, sample_cutoff_2)
+}
+cutoff_1 = mean(cutoff_1_list)
+cutoff_2 = mean(cutoff_2_list)
+```
+
+\
+
+### Ordinal Regression with all predictors
+
+```{r, warning=FALSE}
+(full.orm = orm(correct_call ~ ., data = euchre_turn_down_train))
+```
+
+It is interesting to see that the coefficient for "Count_Trump" is
+negative. Since all the predictors are present, some
+coefficient values could be inaccurate. In order to fix this, let's
+build orm models with less predictors.
+
+\
+
+### Ordinal Regression with top performing individual predictors
+
+The first reduced-variable orm model will be built based on the top variables that perform the best individually, based on chi-squared score. All of the well-performing variables will be included in this new model. 
+
+```{r}
+top_ind_predictors = data.frame()
+for(i in 1:19){
+  df = euchre_turn_down_train[,c(i,20)]
+  (one.orm = orm(correct_call ~ ., data = df))
+  Score_chi2 = one.orm$stats[8]
+  var_name = colnames(df[1])
+  table = data.frame(var_name, Score_chi2)
+  top_ind_predictors = rbind(top_ind_predictors, table)
+}
+rm(table)
+
+top_ind_predictors = top_ind_predictors %>%
+  arrange(desc(Score_chi2))
+
+top_ind_predictors %>%
+  kbl() %>%
+  kable_styling()
+```
+
+The top 9 predictors (Score_chi2 \> 2000) will be used to build this model since there is a good cutoff between the chi-squared score of the 9th best predictor and the 10th best predictor. 
+
+
+```{r, warning=FALSE}
+best_predictors = top_ind_predictors[1:9,]$var_name
+df = euchre_turn_down_train %>%
+  select(matches(best_predictors), 'correct_call')
+(top.pred.orm = orm(correct_call~., data = df))
+```
+
+These coefficients make a lot more sense.
+
+\
+
+### BIC stepwise regression
+
+It would also be interesting to look at the orm models that are optimized for BIC scoring because BIC measures model performance, but also penalizes models for being too complex. Forward steps (where a new variable is added per iteration to improve BIC the most) and backward steps (where a variable is removed per iteration to improve BIC) will be tested to create two additional orm models.
+
+\
+
+### Create forward regression model
+
+```{r, warning=FALSE}
+tot_pred = top_ind_predictors[,1]
+not_used_pred_list = (top_ind_predictors[,1])
+used_pred_list = top_ind_predictors[0,1]
+stop_ind = 0
+
+for(i in 1:(nrow(top_ind_predictors))){
+  for(var in not_used_pred_list){
+    df = euchre_turn_down_train %>%
+      select(matches(used_pred_list), matches(var), 'correct_call')
+    fwd_orm = orm(correct_call~., data = df)
+    
+    if(!exists('use_var')){
+      use_var = var
+    }
+    if(!exists('Best.fwd.orm')){
+      Best.fwd.orm = fwd_orm
+    }
+    if(!exists('Best.fwd.orm.iter')){
+      Best.fwd.orm.iter = fwd_orm
+    }
+    if(BIC(fwd_orm)<BIC(Best.fwd.orm.iter)){
+      Best.fwd.orm.iter = fwd_orm
+      use_var = var
+    }
+  }
+  used_pred_list = c(used_pred_list, use_var)
+  not_used_pred_list = tot_pred[!tot_pred %in% used_pred_list]
+  if(BIC(Best.fwd.orm.iter)<BIC(Best.fwd.orm)){
+    Best.fwd.orm = Best.fwd.orm.iter
+    stop_ind = 0
+  } else{
+    stop_ind = stop_ind + 1
+  }
+  rm(Best.fwd.orm.iter)
+  rm(use_var)
+  rm(df)
+  if(stop_ind == 3){
+    break
+  }
+}
+rm(var)
+rm(fwd_orm)
+rm(tot_pred)
+rm(not_used_pred_list)
+rm(used_pred_list)
+rm(stop_ind)
+```
+
+```{r}
+Best.fwd.orm
+```
+
+It looks like 14 of 19 predictors were used to build this model. The coefficients look pretty good with no apparent surprises. 
+
+```{r, warning=FALSE, echo=FALSE}
+# #rm(Best.fwd.orm)
+# #rm(Best.orm.test)
+# tot_pred = top_ind_predictors[,1]
+# not_used_pred_list = top_ind_predictors[,1]
+# used_pred_list = top_ind_predictors[0,1]
+# Fwd_BIC_Table = data.frame()
+# 
+# for(i in 1:(nrow(top_ind_predictors))){
+#   Fwd_BIC_Table.iter = data.frame()
+#   for(var in not_used_pred_list){
+#     df = euchre_turn_down_train %>%
+#       select(matches(used_pred_list), matches(var), 'correct_call')
+#     fwd_orm = orm(correct_call~., data = df)
+#     #print(fwd_orm[['sformula']])
+#     #print(BIC(fwd_orm))
+#     used_predictors = paste(fwd_orm[['sformula']])
+#     fwd_BIC = BIC(fwd_orm)
+#     num_var = i
+#     add_row = data.frame(used_predictors, fwd_BIC, num_var)
+#     Fwd_BIC_Table.iter = rbind(Fwd_BIC_Table.iter, add_row)
+#     rm(add_row)
+#     
+#     if(!exists('use_var')){
+#       use_var = var
+#     }
+#     if(!exists('Best.fwd.orm')){
+#       Best.fwd.orm = fwd_orm
+#     }
+#     if(!exists('Best.fwd.orm.iter')){
+#       Best.fwd.orm.iter = fwd_orm
+#     }
+#     if(!exists('Best.fwd.orm.iter.chunk')){
+#       Best.fwd.orm.iter.chunk = fwd_orm
+#     }
+#     if(BIC(fwd_orm)<BIC(Best.fwd.orm.iter)){
+#       Best.fwd.orm.iter = fwd_orm
+#       use_var = var
+#     }
+#   }
+#   used_pred_list = c(used_pred_list, use_var)
+#   not_used_pred_list = tot_pred[!tot_pred %in% used_pred_list]
+#   if(BIC(Best.fwd.orm.iter)<BIC(Best.fwd.orm)){
+#     Best.fwd.orm = Best.fwd.orm.iter
+#   }
+#   if(BIC(Best.fwd.orm.iter)<BIC(Best.fwd.orm.iter.chunk)){
+#     Best.fwd.orm.iter.chunk = Best.fwd.orm.iter
+#   }
+#   Fwd_BIC_Table.iter = Fwd_BIC_Table.iter %>%
+#     filter((used_predictors != 'correct_call') & (used_predictors != '~')) %>%
+#     arrange(fwd_BIC)
+#   selection_num = max(.25*round(nrow(Fwd_BIC_Table.iter)), digits = 0, sum(Fwd_BIC_Table.iter$fwd_BIC < BIC(Best.fwd.orm.iter)*1.02))
+#   Fwd_BIC_Table.iter = Fwd_BIC_Table.iter %>%
+#     top_n(-selection_num, fwd_BIC)
+#   Fwd_BIC_Table = rbind(Fwd_BIC_Table, Fwd_BIC_Table.iter)
+#   rm(Best.fwd.orm.iter)
+#   rm(use_var)
+#   rm(df)
+#   if(i%%3 == 0){
+#     top_pred = Fwd_BIC_Table %>%
+#       select(used_predictors, fwd_BIC) %>%
+#       unnest_tokens(word, used_predictors) %>%
+#       group_by(word) %>%
+#       summarise(max_bic = max(fwd_BIC), avg_bic = mean(fwd_BIC), count = n()) %>%
+#       arrange(desc(count), max_bic, avg_bic)
+#     
+#     n_pot_pred = nrow(top_pred)
+#     combo_count = min(round(i/2, 0),5)
+#     pred_limit = round(0.4583*combo_count^4 - 8.75*combo_count^3 + 62.542*combo_count^2 - 199.25*combo_count + 251, 0)
+#     pred_list = top_pred$word
+#     n_pred = min(n_pot_pred, pred_limit)
+#     
+#     n_inc_cols = max((i - combo_count), 0)
+#     splitter = ifelse(n_inc_cols == 0, 1, n_inc_cols)
+#     
+#     
+#     used_var_list = top_pred[1:splitter,1]$word
+#     
+#     if(nrow(top_pred) - length(used_var_list) < 10) {
+#       top_pred_list = top_pred[(splitter+1):nrow(top_pred),1]$word
+#     } else {
+#       top_pred_list = top_pred[(splitter+1):(splitter+10),1]$word
+#     }
+#     
+#     #BIC_Combos = data.frame()
+#     combos = combn(top_pred_list, combo_count)
+#     for(i in 1:ncol(combos)){
+#       if(length(used_var_list) > 0){
+#         df = euchre_turn_down_train %>%
+#           select(matches(used_var_list), matches(combos[,i]), 'correct_call')
+#         orm_test = orm(correct_call~., data = df)
+#         used_predictors = paste(orm_test[['sformula']])
+#         BIC_Score = BIC(orm_test)
+#         add_row = data.frame(used_predictors, BIC_Score)
+#         BIC_Combos = rbind(BIC_Combos, add_row)
+#         rm(add_row)
+#       }
+#       else{
+#         df = euchre_turn_down_train %>%
+#           select(matches(combos[,i]), 'correct_call')
+#         orm_test = orm(correct_call~., data = df)
+#         used_predictors = paste(orm_test[['sformula']])
+#         BIC_Score = BIC(orm_test)
+#         add_row = data.frame(used_predictors, BIC_Score)
+#         BIC_Combos = rbind(BIC_Combos, add_row)
+#         rm(add_row)
+#       }
+#         if(!exists('Best.orm.test')){
+#           Best.orm.test = orm_test
+#           }
+#         if(BIC(orm_test)<BIC(Best.orm.test)){
+#           Best.orm.test = orm_test
+#         }
+#     }
+#     rm(df)
+#     BIC_Combos = BIC_Combos %>%
+#       filter((used_predictors != 'correct_call') & (used_predictors != '~')) %>%
+#       arrange(BIC_Score)
+#     if(BIC(Best.orm.test)<BIC(Best.fwd.orm.iter.chunk)){
+#       rev_pred = BIC_Combos[1,] %>%
+#         select(used_predictors) %>%
+#         unnest_tokens(word, used_predictors)
+#       used_pred_list = rev_pred$word
+#       not_used_pred_list = tot_pred[!tot_pred %in% used_pred_list]
+#       if(BIC(Best.orm.test)<BIC(Best.fwd.orm)){
+#         Best.fwd.orm = Best.orm.test
+#       }
+#     }
+#     rm(Best.fwd.orm.iter.chunk)
+#     rm(Best.orm.test)
+#   }
+# }
+# Fwd_BIC_Table = Fwd_BIC_Table %>%
+#   filter((used_predictors != 'correct_call') & (used_predictors != '~')) %>%
+#   arrange(fwd_BIC)
+```
+
+\
+
+### Create backward regression model
+
+```{r, warning=FALSE}
+tot_pred = top_ind_predictors[,1]
+not_used_pred_list = top_ind_predictors[0,1]
+used_pred_list = tot_pred
+stop_ind = 0
+
+for(i in 1:nrow(top_ind_predictors)-2){
+  for(var in used_pred_list){
+    df = euchre_turn_down_train %>%
+      select(matches(used_pred_list), 'correct_call') %>%
+      select(-matches(var))
+    bwd_orm = orm(correct_call~., data = df)
+    if(!exists('use_var')){
+      use_var = var
+    }
+    if(!exists('Best.bwd.orm')){
+      Best.bwd.orm = bwd_orm
+    }
+    if(!exists('Best.bwd.orm.iter')){
+      Best.bwd.orm.iter = bwd_orm
+    }
+    if(BIC(bwd_orm)<BIC(Best.bwd.orm.iter)){
+      Best.bwd.orm.iter = bwd_orm
+      use_var = var
+    }
+  }
+  not_used_pred_list = c(not_used_pred_list, use_var)
+  used_pred_list = tot_pred[!tot_pred %in% not_used_pred_list]
+  if(BIC(Best.bwd.orm.iter)<=BIC(Best.bwd.orm)){
+    Best.bwd.orm = Best.bwd.orm.iter
+    stop_ind = 0
+  } else {
+    stop_ind = stop_ind + 1
+  }
+  rm(Best.bwd.orm.iter)
+  rm(use_var)
+  if(stop_ind == 3){
+    break
+  }
+}
+rm(var)
+rm(df)
+rm(bwd_orm)
+rm(tot_pred)
+rm(not_used_pred_list)
+rm(used_pred_list)
+rm(stop_ind)
+```
+
+```{r}
+Best.bwd.orm
+```
+
+It looks like a presumably important variable ("Count_Trump") was removed. It is also surprising to see that "Ace_count" got such a strong negative coefficient. 16 of 19 predictors were used. 
+
+\
+
+### Assess performance on all the created orm models
+
+The best performing model will be selected as the represented orm model.
+
+```{r, warning=FALSE, echo=FALSE}
+build_results(model = full.orm)
+build_results(model = Best.fwd.orm)
+build_results(model = Best.bwd.orm)
+build_results(model = top.pred.orm)
+
+Build_metrics_table(full.orm)
+Build_metrics_table(Best.fwd.orm)
+Build_metrics_table(Best.bwd.orm)
+Build_metrics_table(top.pred.orm)
+
+turn_down_orm_results = bind_rows(full.orm_stats, Best.fwd.orm_stats, Best.bwd.orm_stats, top.pred.orm_stats)
+
+turn_down_orm_results %>%
+  kbl() %>%
+  kable_styling()
+```
+
+The forward ordinal regression model will be used. The results are good and that model uses less variables. Also, the variables used and their respective coefficients make the most logical sense from an intuitive standpoint. The cutoffs will be determined by the simulated calculated cutoffs, not the traditional way, because it yields a better F1 and loss cost score.
+
+```{r}
+euchre_turn_down.orm = Best.fwd.orm
+```
+
+\
+
+## Multinomial Regression 
+
+### Create full multinomial model
+
+```{r}
+(full.multinom = multinom(correct_call ~ ., data = euchre_turn_down_train))
+```
+
+This is more difficult to interpret compared to the orm model. However, the coefficients for the variables can be interpreted the same. Unlike the orm model, there are separate coefficients for each predicted class, except one. These scores are converted to p-values for each class that add to 1. 
+
+\
+
+It is interesting that most of the positive and negative coefficients for the "2" class generally go in the same direction, but have a larger magnitude compared to the "1" class for most variables. 
+
+\
+
+All these coefficients seem to make reasonable sense.
+
+\
+
+### Regression with top 9 individual orm predictors
+
+For curiosity, let's look at how well a multinomial model performs with the 9 best predictors from the individual orm models. 
+
+```{r}
+df = euchre_turn_down_train %>%
+  select(matches(best_predictors), 'correct_call')
+(top.pred.multinom = multinom(correct_call~., data = df))
+```
+
+These coefficients seem to make reasonable sense. 
+
+\
+
+### Regression with step models
+
+```{r, echo=TRUE, results = 'hide'}
+# Create null multinomial model as baseline 
+null.multinom = multinom(correct_call ~ 1, data = euchre_turn_down_train)
+
+fwd.multinom = step(null.multinom, scope = list(lower = null.multinom, upper = full.multinom), direction = "forward", k = log(nrow(euchre_turn_down_train)))
+
+bwd.multinom = step(full.multinom, direction = "backward", k = log(nrow(euchre_turn_down_train)))
+```
+
+\
+
+### View forward multinomial model
+
+```{r, echo=FALSE}
+fwd.multinom
+```
+
+It looks like 14 of the 19 variables are being used in this model. The coefficients look good.
+
+\
+
+### View backward multinomial model
+
+```{r, echo=FALSE}
+bwd.multinom
+```
+
+It looks like all 19 variables are being used in this model, so it is the same as the full model.
+
+\
+
+### View performance of all multinomial models
+
+```{r, echo = FALSE}
+build_results(model = full.multinom)
+build_results(model = fwd.multinom)
+build_results(model = bwd.multinom)
+build_results(model = top.pred.multinom)
+
+Build_metrics_table(full.multinom)
+Build_metrics_table(fwd.multinom)
+Build_metrics_table(bwd.multinom)
+Build_metrics_table(top.pred.multinom)
+
+turn_down_multinomial_results = bind_rows(full.multinom_stats, fwd.multinom_stats, bwd.multinom_stats, top.pred.multinom_stats)
+
+turn_down_multinomial_results %>%
+  kbl() %>%
+  kable_styling()
+```
+
+The forward step multinomial model will be used since it contains less variables and yields nearly similar results to the full model. 
+
+```{r}
+euchre_turn_down.multinom = fwd.multinom
+```
+
+\
+
+## Decision Trees
+
+Decision trees are the most interesting because unlike all the created
+models provided, decision trees are very interpretative and provide a
+clear action of what call to make based on a list of conditions.
+
+It is the most practical model to use in a real-life Euchre game.
+
+\
+
+### Create initial decision tree
+
+```{r}
+default.large.tree = rpart(correct_call ~., data = euchre_turn_down_train, method = "class", control = rpart.control(cp = .001))
+rpart.plot::rpart.plot(default.large.tree)
+```
+
+### Prune the tree to make an easier to follow model
+
+```{r}
+printcp(default.large.tree)
+```
+
+```{r}
+default.pruned.tree = rpart(correct_call ~., data = euchre_turn_down_train, method = "class", control = rpart.control(cp = 0.0026034)) # nsplit = 11
+rpart.plot::rpart.plot(default.pruned.tree)
+```
+
+
+This tree gives a great list of conditions that should be satisfied when
+making a bid for presumably the best suit in hand (excluding the turned down suit).
+
+\
+
+#### **The player should PASS if:**
+
+[There are 0 trump cards in hand]{style="color:red;"}
+
+**OR**  
+
+[There is 1 trump card in hand]{style="color:red;"}\
+AND\
+[That trump card is weaker than the Left Bower]{style="color:red;"}\
+AND/OR\
+[There are no non-trump aces in hand]{style="color:red;"}
+
+**OR** 
+
+[There are 2 trump cards in hand]{style="color:red;"}\
+AND\
+[The strongest card in hand is weaker than the Left Bower]{style="color:red;"}\
+AND\
+[There are no non-trump aces in hand]{style="color:red;"}
+
+**OR** 
+
+[There are 2 trump cards in hand]{style="color:magenta;"}\
+AND\
+[The strongest card in hand is weaker than the Left Bower]{style="color:magenta;"}\
+AND\
+[There is at least 1 non-trump ace in hand]{style="color:magenta;"}\
+AND\
+[The trump ace is NOT in hand]{style="color:magenta;"}
+
+**OR**  
+
+[There are 2 trump cards in hand]{style="color:magenta;"}\
+AND\
+[The strongest card is at least as strong as the Left Bower]{style="color:magenta;"}\
+AND\
+[There are no non-trump aces in hand]{style="color:magenta;"}\
+AND\
+[All 3 non-trump suits are in hand]{style="color:magenta;"}  
+
+\
+
+#### **The player should order trump if:**
+
+There are 1-2 trump cards in hand\
+AND\
+The strongest card in hand is at least as strong as the Left Bower\
+AND\
+There is at least one non-trump ace in hand
+
+**OR** 
+
+There are 2 trump cards in hand\
+AND\
+The strongest card in hand is weaker than the Left Bower\
+AND\
+There is at least 1 non-trump ace in hand\
+AND\
+The trump ace is in hand
+
+**OR**
+
+There are 2 trump cards in hand\
+AND\
+The strongest card in hand is at least as strong as the Left Bower\
+AND\
+There are no non-trump aces in hand\
+AND\
+All 3 distinct non-trump suits are NOT present in hand
+
+**OR** 
+
+There are 3 trump cards in hand 
+
+**OR** 
+
+There are 4-5 trump cards in hand\
+AND\
+The Right Bower is NOT present in hand\
+AND\
+There are no non-trump aces in hand
+
+\
+
+#### **The player should go alone if:**
+
+[There are 4-5 trump cards in hand]{style="color:green;"}\
+AND\
+[The Right Bower is present in hand]{style="color:green;"}\
+AND/OR\
+[There is at least 1 non-trump ace in hand]{style="color:green;"}
+
+\
+
+### Create Weighted Tree
+
+To create this weighted tree, loss costs will be assigned to each
+misclassification category. These loss cost values get calculated by
+using the default tree model to predict what call should be made. The
+difference between the points won off the correct call and the points
+won off the predicted call are calculated as the loss cost. The average
+loss cost for each misclassification category (predicted 0s actual 1s),
+(predicted 1s actual 2s), etc. get stored as the parameter values used when
+creating the new tree.
+
+```{r}
+# Create average loss cost values for each misclassification category
+build_results(model = default.pruned.tree)
+find_loss_cost(results_default.pruned.tree, 'model_bid', return_avg_cost = FALSE, save_ind_costs = TRUE)
+```
+
+```{r}
+weighted.large.tree = rpart(correct_call ~., data = euchre_turn_down_train, method = "class",
+                      parms = list(loss = matrix(c(0, p0_a1, p0_a2, p1_a0, 0, p1_a2, p2_a0, p2_a1, 0), nrow = 3)), control = rpart.control(cp = .001))
+rpart.plot::rpart.plot(weighted.large.tree)
+```
+
+
+### Prune the tree to make an easier to follow model
+
+```{r}
+printcp(weighted.large.tree)
+```
+
+
+```{r}
+weighted.pruned.tree = rpart(correct_call ~., data = euchre_turn_down_train, method = "class",
+                      parms = list(loss = matrix(c(0, p0_a1, p0_a2, p1_a0, 0, p1_a2, p2_a0, p2_a1, 0), nrow = 3)), control = rpart.control(cp = 0.0011662)) # nsplit = 12
+rpart.plot::rpart.plot(weighted.pruned.tree)
+```
+
+
+This tree looks to be a little more complex than the pruned default tree. In fact, there only seems to be one additional split. 
+
+This tree also gives a great list of conditions that should be satisfied when
+making a bid for the presumed best suit in hand.
+
+\
+
+#### **The player should PASS if:**
+
+[There are 0 trump cards in hand]{style="color:red;"}  
+
+**OR** 
+
+[There is 1 trump card in hand]{style="color:magenta;"}\
+AND\
+[That trump card is at least as strong as the Left Bower]{style="color:magenta;"}\
+AND\
+[There is exactly 1 non-trump ace in hand]{style="color:magenta;"}
+
+**OR** 
+
+[There are 1-2 trump cards in hand]{style="color:red;"}\
+AND\
+[The strongest card in hand is weaker than the Left Bower]{style="color:red;"}
+
+**OR** 
+
+[There are 1-2 trump cards in hand]{style="color:magenta;"}\
+AND\
+[The strongest card in hand is at least as strong as the Left Bower]{style="color:magenta;"}\
+AND\
+[There are no non-trump aces in hand]{style="color:magenta;"}
+
+**OR** 
+
+[There are 3 trump cards in hand]{style="color:magenta;"}\
+AND\
+[There are no non-trump aces in hand]{style="color:magenta;"}\
+AND\
+[The strongest card in hand is weaker than the trump ace]{style="color:magenta;"} 
+
+\
+
+#### **The player should order trump if:**
+
+There is 1 trump card in hand\
+AND\
+That trump card is at least as strong as the Left Bower\
+AND\
+There are at least 2 non-trump aces in hand
+
+**OR** 
+
+There are 2 trump cards in hand\
+AND\
+The strongest card is at least as strong as the Left Bower\
+AND\
+There is at least 1 non-trump ace in hand
+
+**OR** 
+
+There are 3 trump cards in hand\
+AND\
+There are no non-trump aces in hand\
+AND\
+The strongest card in hand is at least as strong as the trump ace 
+
+**OR** 
+
+There are 3 trump cards in hand\
+AND\
+There is at least one non-trump ace in hand\
+AND\
+There are less than 2 distinct non-trump suits in hand\
+AND\
+The Right Bower is NOT present in hand
+
+**OR** 
+
+There are 3 trump cards in hand\
+AND\
+There are 2 distinct non-trump suits in hand\
+AND\
+There is exactly 1 non-trump ace in hand
+
+\
+
+#### **The player should go alone if:**
+
+[There are 3 trump cards in hand]{style="color:green;"}\
+AND\
+[There is at least 1 non-trump ace in hand]{style="color:green;"}\
+AND\
+[There are less than 2 distinct non-trump suits in hand]{style="color:green;"}\
+AND\
+[The Right Bower is present in hand]{style="color:green;"}
+
+**OR**
+
+[There are 3 trump cards in hand]{style="color:green;"}\
+AND\
+[There are 2 non-trump aces in hand]{style="color:green;"}
+
+**OR** 
+
+[There are 4-5 trump cards in hand]{style="color:green;"}
+
+\
+
+**These trees provide good recommendations for what decisions to make, but they are by no means perfect. There are definitely exceptions that just happen to get grouped in a specific leaf.**
+
+**It is also important to note that for the pink leaf scenarios, bidding trump is recommended in dire situations (when the opposing team has 9 points and only needs one point left to score). A little less than half of the records in the pink leafs are successful bids, so it would not hurt to bid trump in these scenarios. It would not be a good idea give a team that only needs one point an opportunity to bid trump.**
+
+**On the flip side, the green leaf scenarios should only "order trump alone" if the player's team has 7 points or less. This is because if a team has 8 points, both players can play the round and can win 2 points, which would win the game.**
+
+**Finally, not all the leafs should necessarily be followed all the time. For example, if there are 4 weak trump cards in hand, maybe it would make more sense to order trump NOT alone instead of going alone.**
+
+\
+
+### Evaluate results for the decision trees
+
+```{r, echo=FALSE}
+build_results(model = default.large.tree)
+build_results(model = default.pruned.tree)
+build_results(model = weighted.large.tree)
+build_results(model = weighted.pruned.tree)
+
+Build_metrics_table(default.large.tree)
+Build_metrics_table(default.pruned.tree)
+Build_metrics_table(weighted.large.tree)
+Build_metrics_table(weighted.pruned.tree)
+
+turn_down_tree_results = bind_rows(default.large.tree_stats, 
+                                   default.pruned.tree_stats,
+                                   weighted.large.tree_stats,
+                                   weighted.pruned.tree_stats)
+
+turn_down_tree_results %>%
+  kbl() %>%
+  kable_styling()
+```
+
+The **weighted** pruned tree yields a much better loss cost compared to the **default** pruned tree. Although the weighted pruned tree has a leaf where a player could make a bid with 1 trump card, the additional logic for that leaf makes it reliable to do so. Furthermore, the sorting process is also more lenient on classifying 2s and there's a lower risk of getting euchred while using this model. Therefore, the **weighted pruned tree** model will be used. 
+
+```{r}
+euchre_turn_down.tree = weighted.pruned.tree
+```
+
+\
+
+## Random Forest
+
+Ideally, this model can be used to determine which predictors are the
+most important and if the predictions align with the other created models.
+
+A random forest uses many decision trees and combines the outputs to reach a singular result. 
+
+```{r}
+euchre_turn_down.rf = randomForest(correct_call ~ ., data = euchre_turn_down_train, ntree = 300, mtry = 5, nodesize = 1, importance = TRUE)
+varImpPlot(euchre_turn_down.rf, type = 2)
+```
+
+The random forest importance plot shows that the top 6 most important
+predictors are the count of trump cards, the strongest card value, the
+count of distinct non-trump suits, the count of non-trump aces, whether the
+Right Bower is present, and the order in which the player will be starting in. This is consistent with the predictors
+selected in other models.
+
+\
+
+### Show random forest model performance
+
+```{r, echo = FALSE}
+build_results(model = euchre_turn_down.rf)
+Build_metrics_table(euchre_turn_down.rf)
+
+euchre_turn_down.rf_stats %>%
+  kbl() %>%
+  kable_styling()
+```
+
+From a glance, the result metrics don't seem to be vastly different than the
+other models. Therefore, it can be fair to assume that the insights found from the random forest model can be applied to the other models.
+
+\
+
+## K Nearest Neighbors
+
+In order to build K nearest neighbors models, all the data needs to be numerical. In addition, it is important that all variables are normalized. This way, all variables carry the same amount of weight when making predictions. 
+
+```{r}
+# Create dummy variables for categorical fields
+euchre_turn_down_train_w_dummies = dummy_cols(euchre_turn_down_train, select_columns = "Broad_Start_Order", remove_selected_columns = TRUE)
+
+euchre_turn_down_test_w_dummies = dummy_cols(euchre_turn_down_test, select_columns = "Broad_Start_Order", remove_selected_columns = TRUE)
+
+# Normalize all predictor variables so each value is between zero and one
+euchre_turn_down_train_w_dummies.norm = euchre_turn_down_train_w_dummies
+euchre_turn_down_test_w_dummies.norm = euchre_turn_down_test_w_dummies
+
+cols = colnames(euchre_turn_down_train_w_dummies.norm[,-19])
+for(i in cols){
+  euchre_turn_down_train_w_dummies.norm[[i]] = (euchre_turn_down_train_w_dummies.norm[[i]] - min(euchre_turn_down_train_w_dummies[[i]]))/(max(euchre_turn_down_train_w_dummies[[i]]) - min(euchre_turn_down_train_w_dummies[[i]]))
+  euchre_turn_down_test_w_dummies.norm[[i]] = (euchre_turn_down_test_w_dummies.norm[[i]] - min(euchre_turn_down_train_w_dummies[[i]]))/(max(euchre_turn_down_train_w_dummies[[i]]) - min(euchre_turn_down_train_w_dummies[[i]]))
+}
+```
+
+\
+
+### K Nearest Neighbors with all variables
+
+```{r}
+# Create dataframe with unique observations to prevent excess number of ties
+distinct_euchre_turn_down_train_w_dummies.norm = unique(euchre_turn_down_train_w_dummies.norm)
+
+lg_loss_cost.df = data.frame(k=seq(26, 50, 1),
+                          loss_cost = rep(0, 25))
+# Look for which K value performs the best. Look for K values between 26-50 to use
+for(i in 1:25){
+  knn.pred = knn(distinct_euchre_turn_down_train_w_dummies.norm[,-19],
+                 euchre_turn_down_test_w_dummies.norm[,-19],
+                 cl = distinct_euchre_turn_down_train_w_dummies.norm$correct_call,
+                 k=i+25)
+  result.iter = results_test
+  result.iter$model_bid = knn.pred
+  lg_loss_cost.df[i,2] = find_loss_cost(result.iter, 'model_bid') # Record loss cost of model when testing for each K
+}
+# Use the average lowest loss cost value to get the best K value
+best_full_k = lg_loss_cost.df %>%
+  mutate(min_score = min(loss_cost)) %>%
+  filter(loss_cost == min_score) %>%
+  mutate(min_k = min(k)) %>%
+  filter(k == min_k)
+best_full_k = best_full_k$k
+
+# Build KNN model with the best performing K value
+euchre_turn_down.full.knn = knn(train = distinct_euchre_turn_down_train_w_dummies.norm[,-19],
+                              test = euchre_turn_down_test_w_dummies.norm[,-19],
+                              cl = distinct_euchre_turn_down_train_w_dummies.norm$correct_call,
+                              k=best_full_k)
+
+paste0('The best K for the full KNN model is ', best_full_k)
+```
+
+\
+
+### K Nearest Neighbors with the 6 most important variables from the random forest model
+
+```{r}
+# Use the top 6 rf variables
+top_rf_var = c('Count_Trump', 'Strongest_Card', 'Ace_count', 'Non_Trump_Suit_Count', 'Right_Bower', 'Broad_Start_Order')
+euchre_turn_down_train_w_dummies.norm_subset = euchre_turn_down_train_w_dummies.norm %>%
+  select(matches(top_rf_var), 'correct_call')
+euchre_turn_down_test_w_dummies.norm_subset = euchre_turn_down_test_w_dummies.norm %>%
+  select(matches(top_rf_var), 'correct_call')
+
+distinct_euchre_turn_down_train_w_dummies.norm_subset = unique(euchre_turn_down_train_w_dummies.norm_subset)
+
+sm_loss_cost.df = data.frame(k=seq(26, 50, 1),
+                             loss_cost = rep(0, 25))
+# Look for which K value performs the best. Look for K values between 26-50 to use
+for(i in 1:25){
+  knn.pred = knn(distinct_euchre_turn_down_train_w_dummies.norm_subset[,-9],
+                 euchre_turn_down_test_w_dummies.norm_subset[,-9],
+                 cl = distinct_euchre_turn_down_train_w_dummies.norm_subset$correct_call,
+                 k=i+25)
+  result.iter = results_test
+  result.iter$model_bid = knn.pred
+  sm_loss_cost.df[i,2] = find_loss_cost(result.iter, 'model_bid') # Record loss cost of model when testing for each K
+}
+# Use the average lowest loss cost value to get the best K value
+best_small_k = sm_loss_cost.df %>%
+  mutate(min_score = min(loss_cost)) %>%
+  filter(loss_cost == min_score) %>%
+  mutate(min_k = min(k)) %>%
+  filter(k == min_k)
+best_small_k = best_small_k$k
+
+# Build KNN model with the best performing K value
+euchre_turn_down.small.knn = knn(train = distinct_euchre_turn_down_train_w_dummies.norm_subset[,-9],
+                              test = euchre_turn_down_test_w_dummies.norm_subset[,-9],
+                              cl = distinct_euchre_turn_down_train_w_dummies.norm_subset$correct_call,
+                              k=best_small_k)
+
+paste0('The best K for the small KNN model is ', best_small_k)
+```
+
+\
+
+### Evaluate performance of KNN models
+
+```{r, echo = FALSE}
+euchre_turn_down.full.knn_results = results_test
+euchre_turn_down.full.knn_results$model_bid = euchre_turn_down.full.knn
+Build_metrics_table_rslt_tbl(euchre_turn_down.full.knn_results, 'euchre_turn_down.full.knn', 'model_bid')
+
+euchre_turn_down.small.knn_results = results_test
+euchre_turn_down.small.knn_results$model_bid = euchre_turn_down.small.knn
+Build_metrics_table_rslt_tbl(euchre_turn_down.small.knn_results, 'euchre_turn_down.small.knn', 'model_bid')
+
+turn_down_knn_results = rbind(euchre_turn_down.full.knn_stats, euchre_turn_down.small.knn_stats)
+
+turn_down_knn_results %>%
+  kbl() %>%
+  kable_styling()
+```
+
+The full KNN model performs a lot better, so that will be used. 
+
+```{r}
+turn_down_best_k = best_full_k
+```
+
+\
+
+## Discriminant Analysis
+
+The two types of discriminant analysis tested will be mixture discriminant analysis (MDA) and flexible discriminant analysis (FDA). 
+
+**MDA** assumes that classes have a Gaussian mixture of sub classes. This means that there could be clusters that belong to the same class that are scattered in multiple different groups. This algorithm does a great job at identifying multiple areas in which a class has a high frequency of observations and predicts based on those patterns.  
+
+**FDA** is similar to linear discriminant analysis, but it allows for non-linear combinations, making predictions more flexible. This is beneficial for variables that have non-linear relationships within each group. 
+
+Discriminant analysis will be applied using the top 6 most important random forest predictors. This is for more capable model processing and so no NAs get included in subscripted assignments.
+
+```{r}
+euchre_turn_down_train_subset = euchre_turn_down_train %>%
+  select(matches(top_rf_var), 'correct_call')
+
+
+euchre_turn_down.mda = mda(correct_call ~., data = euchre_turn_down_train_subset)
+euchre_turn_down.fda = fda(correct_call ~., data = euchre_turn_down_train_subset)
+```
+
+\
+
+### Evaluate performance of discriminant analysis models 
+
+```{r, echo = FALSE}
+results_mda = results_test
+results_mda$model_bid = predict(euchre_turn_down.mda, newdata = euchre_turn_down_test)
+
+Build_metrics_table_rslt_tbl(results_mda, 'euchre_turn_down.mda', 'model_bid')
+
+
+results_fda = results_test
+results_fda$model_bid = predict(euchre_turn_down.fda, newdata = euchre_turn_down_test)
+
+Build_metrics_table_rslt_tbl(results_fda, 'euchre_turn_down.fda', 'model_bid')
+
+turn_down_da_results = rbind(euchre_turn_down.mda_stats, euchre_turn_down.fda_stats)
+
+turn_down_da_results %>%
+  kbl() %>%
+  kable_styling()
+```
+
+Although it is close, the FDA model seems to be the better choice due to a better F1 score and better accuracy. Also, the natural distribution of the target variable seems to be a better fit for FDA (there are no scattered clusters because the target variable appears to be ordinal). Therefore, FDA will be used as the discriminant analysis model. 
+
+```{r}
+euchre_turn_down.da = euchre_turn_down.fda
+```
+
+\
+
+## Two-Step Logistic Regression 
+
+Every model made so far has been a multiclass model. Let's see how well 2 integrated logistic regression models perform. This is a two-step process where the first logistic regression model will assume a binomial distribution and predict whether an observation is a 0 or 1. The predicted 1s are then filtered and another logistic regression model will assume another binomial distribution and predict whether those observations are 1s or 2s. 
+
+Like the orm models, the cutoffs will either be decided by the class with the highest probability or a simulated cutoff value for both classes. Whichever cutoff method yields the better results for each best performing logistic regression model will be used. 
+
+\
+
+#### Create the first cutoff value
+
+This is based on the distribution of hands classified as zero. Similar to making the orm cutoffs, data is randomly selected and the proportion of records classified as 0s are recorded. The cutoff value assigned will be Nth percentile of the logit made on a logistic regression model with all variables. N represents the proportion of records classified as 0s. The process is repeated 100 times and the average cutoff score is used. 
+
+```{r, warning=FALSE}
+cutoff_1_list_lm = c()
+for(i in 1:100){
+  sample_index = sample(nrow(euchre_turn_down1), nrow(euchre_turn_down1) * 0.80) # Take 80% of data to test
+  euchre_turn_down_train_sample = euchre_turn_down1[sample_index, ]
+  full.logr1 = glm(correct_call ~ ., data = euchre_turn_down_train_sample, family = binomial)
+  pass_proportion = nrow(euchre_turn_down_train_sample[euchre_turn_down_train_sample$correct_call==0,])/nrow(euchre_turn_down_train_sample)
+  y = predict(full.logr1, type = 'response')
+  sample_cutoff_1_lm = quantile(y, pass_proportion)
+  cutoff_1_list_lm = append(cutoff_1_list_lm, sample_cutoff_1_lm)
+  
+}
+cutoff_1_lm = mean(cutoff_1_list_lm)
+```
+
+\
+
+#### Create the second cutoff value
+
+Using the 1st full logistic regression model and the 1st cutoff value that was calculated above, the data is filtered so only the records predicted as 1s are used to build the 2nd cutoff value. This 2nd cutoff value is created using the same process as above. 
+
+```{r}
+cutoff_2_list_lm = c()
+full.logr1 = glm(correct_call ~ ., data = euchre_turn_down1, family = binomial)
+euchre_turn_down2 = euchre_turn_down1
+euchre_turn_down2$prediction = predict(full.logr1, type = 'response', newdata = euchre_turn_down2)
+for(i in 1:100){
+  sample_index = sample(nrow(euchre_turn_down2), nrow(euchre_turn_down2) * 0.80)
+  euchre_turn_down_train_sample = euchre_turn_down2[sample_index, ]
+  euchre_turn_down_train_sample = euchre_turn_down_train_sample[euchre_turn_down_train_sample$prediction >= cutoff_1_lm, ]
+  euchre_turn_down_train_sample = subset(euchre_turn_down_train_sample, select=-c(prediction))
+  full.logr2 = glm(correct_call ~ ., data = euchre_turn_down_train_sample, family = binomial)
+  loner_proportion = nrow(euchre_turn_down_train_sample[euchre_turn_down_train_sample$correct_call==2,])/nrow(euchre_turn_down_train_sample)
+  y = predict(full.logr2, type = 'response')
+  sample_cutoff_2_lm = quantile(y, loner_proportion)
+  cutoff_2_list_lm = append(cutoff_2_list_lm, sample_cutoff_2_lm)
+}
+cutoff_2_lm = mean(cutoff_2_list_lm)
+```
+
+\
+
+### Create first logistic regression models
+
+These models will be made using forward and backward stepwise regression, using AIC and BIC as the performance metrics.
+
+```{r, warning = FALSE, echo = TRUE, results='hide'}
+euchre_turn_down_train1 = euchre_turn_down_train
+euchre_turn_down_train1$correct_call1 = ifelse(euchre_turn_down_train1$correct_call == 0, 0, 1) # Assign new variable that converts 2s into 1s
+
+lm1.full = glm(correct_call1 ~. - correct_call, family = binomial, data = euchre_turn_down_train1)
+
+null.lm1 = glm(correct_call1 ~ 1, data = euchre_turn_down_train1)
+
+fwd.lm1.bic = step(null.lm1, scope = list(lower = null.lm1, upper = lm1.full), direction = "forward", k = log(nrow(euchre_turn_down_train1)))
+
+bwd.lm1.bic = step(lm1.full, direction = "backward", k = log(nrow(euchre_turn_down_train1)))
+
+fwd.lm1.aic = step(null.lm1, scope = list(lower = null.lm1, upper = lm1.full), direction = "forward")
+
+bwd.lm1.aic = step(lm1.full, direction = "backward")
+```
+
+```{r, echo = FALSE}
+build_lm1_metrics(lm1.full)
+build_lm1_metrics(fwd.lm1.bic)
+build_lm1_metrics(bwd.lm1.bic)
+build_lm1_metrics(fwd.lm1.aic)
+build_lm1_metrics(bwd.lm1.aic)
+
+lm1_models %>%
+  kbl() %>%
+  kable_styling()
+```
+
+The bwd.lm1.bic model with the default 0.5 cutoff appears to be the best option here due to its decent performance and simplicity (lowest BIC). 
+
+```{r}
+bwd.lm1.bic
+```
+
+The 13 variables and their respective coefficients seem to make reasonable sense.
+
+```{r}
+euchre_turn_down.lm1 = bwd.lm1.bic
+```
+
+\
+
+#### Preprocess the data so a new dataframe is created using only the observations predicted as 1s
+
+```{r}
+euchre_turn_down_train1 = euchre_turn_down_train
+euchre_turn_down_train1$correct_call1 = ifelse(euchre_turn_down_train1$correct_call == 0, 0, 1) # Preprocess data to create new variable that classifies 2s as 1s so the outcome is binary
+
+# Make predictions using the first logistic regression model
+logr1_results = euchre_all_test_turn_down
+logr1_results$model_bid = ifelse(predict(euchre_turn_down.lm1, newdata = logr1_results, type = 'response') < 0.5, 0, 1)
+euchre_turn_down_train1$prediction1 = ifelse(predict(euchre_turn_down.lm1, type = 'response') < 0.5, 0, 1) # Define predicted variables using default cutoff value
+
+# Create new dataframe that has predicted 1s from model
+euchre_turn_down_train2 = euchre_turn_down_train1[euchre_turn_down_train1$prediction1 != 0, ]
+euchre_turn_down_train2 = subset(euchre_turn_down_train2, select=-c(correct_call1, prediction1))
+euchre_turn_down_train2$correct_call2 = ifelse(euchre_turn_down_train2$correct_call == 2, 1, 0)
+```
+
+\
+
+### Create second logistic regression models
+
+These models will also be made using forward and backward stepwise regression, using AIC and BIC as the performance metrics. 
+
+```{r, warning=FALSE, echo = TRUE, results='hide'}
+lm2.full = glm(correct_call2 ~. - correct_call, family = binomial, data = euchre_turn_down_train2)
+
+null.lm2 = glm(correct_call2 ~ 1, data = euchre_turn_down_train2)
+
+fwd.lm2.bic = step(null.lm2, scope = list(lower = null.lm2, upper = lm2.full), direction = "forward", k = log(nrow(euchre_turn_down_train2)))
+
+bwd.lm2.bic = step(lm2.full, direction = "backward", k = log(nrow(euchre_turn_down_train2)))
+
+fwd.lm2.aic = step(null.lm2, scope = list(lower = null.lm2, upper = lm2.full), direction = "forward")
+
+bwd.lm2.aic = step(lm2.full, direction = "backward")
+```
+
+```{r, echo=FALSE}
+build_lm2_metrics(lm2.full)
+build_lm2_metrics(fwd.lm2.bic)
+build_lm2_metrics(bwd.lm2.bic)
+build_lm2_metrics(fwd.lm2.aic)
+build_lm2_metrics(bwd.lm2.aic)
+
+lm2_models %>%
+  kbl() %>%
+  kable_styling()
+```
+
+The bwd.lm2.aic model with the default 0.5 cutoff will be used because it has the best results. It has similar results to the full model while using slightly less variables. 
+
+
+```{r}
+bwd.lm2.aic
+```
+
+These 14 variables and their respective coefficients also seem to be reasonable.
+
+```{r}
+euchre_turn_down.lm2 = bwd.lm2.aic
+```
+
+\
+
+### Combine the results of the two logistic regression models and evaluate the result
+
+```{r}
+logr2_results = logr1_results[logr1_results$model_bid != 0, ]
+logr1_results = logr1_results[logr1_results$model_bid == 0, ]
+
+logr2_results$model_bid = ifelse(predict(euchre_turn_down.lm2, newdata = logr2_results, type = 'response') < 0.5, 1, 2)
+
+
+turn_down_results_two_lms = rbind(logr1_results[, c('correct_call', 'team_ind_tricks_won', 'team_tricks_won', 'alone_tricks_won', 'model_bid')], logr2_results[, c('correct_call', 'team_ind_tricks_won', 'team_tricks_won', 'alone_tricks_won', 'model_bid')])
+
+Build_metrics_table_rslt_tbl(turn_down_results_two_lms, 'euchre_turn_down.2lm', 'model_bid')
+
+euchre_turn_down.2lm_stats %>%
+  kbl() %>%
+  kable_styling()
+```
+
+This method also does a good job with classification. 
+
+\
+
+## Create dataframe that makes predictions using all 7 of the best algorithms analyzed
+
+The goal is to compare how each of the best algorithms perform and to determine if combining all these models together would yield significantly better results. 
+
+```{r, warning=FALSE}
+# Build logistic regression results
+euchre_2lm_prediction1 = euchre_all_test_turn_down
+euchre_2lm_prediction1$two_lm_bid = ifelse(predict(euchre_turn_down.lm1, newdata = euchre_all_test_turn_down, type = 'response') < 0.5, 0, 1)
+euchre_2lm_prediction2 = euchre_2lm_prediction1[euchre_2lm_prediction1$two_lm_bid == 1,]
+euchre_2lm_prediction1 = euchre_2lm_prediction1[euchre_2lm_prediction1$two_lm_bid == 0,]
+euchre_2lm_prediction2$two_lm_bid = ifelse(predict(euchre_turn_down.lm2, newdata = euchre_2lm_prediction2, type = 'response') < 0.5, 1, 2)
+euchre_test_predictions = rbind(euchre_2lm_prediction1, euchre_2lm_prediction2)
+
+# Build ordinal regression results
+euchre_test_predictions$orm_bid = predict(euchre_turn_down.orm, newdata = euchre_test_predictions, type = 'lp')
+euchre_test_predictions = euchre_test_predictions %>%
+  mutate(orm_bid = case_when(orm_bid<=cutoff_1~0, orm_bid<=cutoff_2~1, TRUE~2))
+
+# Build multinomial results
+euchre_test_predictions$multinom_bid = as.numeric(predict(euchre_turn_down.multinom, newdata = euchre_test_predictions))-1
+
+# Build decision tree results
+euchre_test_predictions$tree_bid = as.numeric(predict(euchre_turn_down.tree, newdata = euchre_test_predictions, type = 'class'))-1
+
+# Build random forest results
+euchre_test_predictions$random_forest_bid = as.numeric(predict(euchre_turn_down.rf, newdata = euchre_test_predictions, type = 'class'))-1
+
+# Build K nearest neighbors results
+euchre_test_predictions_w_dummies = dummy_cols(euchre_test_predictions, select_columns = "Broad_Start_Order", remove_selected_columns = TRUE)
+
+euchre_test_predictions_w_dummies = euchre_test_predictions_w_dummies %>% 
+  select(-matches('_bid'), -matches('_tricks_won'), -'predicted_call')
+
+
+cols = colnames(euchre_test_predictions_w_dummies[,-19])
+for(i in cols){
+  euchre_test_predictions_w_dummies[[i]] = (euchre_test_predictions_w_dummies[[i]] - min(euchre_turn_down_train_w_dummies[[i]]))/(max(euchre_turn_down_train_w_dummies[[i]]) - min(euchre_turn_down_train_w_dummies[[i]]))
+}
+euchre_test_predictions$knn_bid = as.numeric(knn(train = distinct_euchre_turn_down_train_w_dummies.norm[,-19],
+                                      test = euchre_test_predictions_w_dummies[,-19],
+                                      cl=distinct_euchre_turn_down_train_w_dummies.norm$correct_call,
+                                      k=turn_down_best_k))-1
+
+# Build discriminant analysis results
+euchre_test_predictions$da_bid = as.numeric(predict(euchre_turn_down.da, newdata = euchre_test_predictions))-1
+
+# Take average score of all model predictions for an observation and assign value as ensemble bid
+euchre_test_predictions$top_bid = round((euchre_test_predictions$two_lm_bid +
+                                          euchre_test_predictions$orm_bid +
+                                          euchre_test_predictions$multinom_bid +
+                                          euchre_test_predictions$tree_bid +
+                                          euchre_test_predictions$random_forest_bid + 
+                                           euchre_test_predictions$knn_bid + 
+                                           euchre_test_predictions$da_bid)/7, 0)
+
+```
+
+\
+
+### Create results table to see which top algorithms perform the best
+
+```{r, echo=FALSE}
+Build_metrics_table_rslt_tbl(euchre_test_predictions, 'euchre_turn_down.Intuition', 'predicted_call')
+Build_metrics_table_rslt_tbl(euchre_test_predictions, 'euchre_turn_down.2lm', 'two_lm_bid')
+Build_metrics_table_rslt_tbl(euchre_test_predictions, 'euchre_turn_down.orm', 'orm_bid')
+Build_metrics_table_rslt_tbl(euchre_test_predictions, 'euchre_turn_down.multinom', 'multinom_bid')
+Build_metrics_table_rslt_tbl(euchre_test_predictions, 'euchre_turn_down.tree', 'tree_bid')
+Build_metrics_table_rslt_tbl(euchre_test_predictions, 'euchre_turn_down.rf', 'random_forest_bid')
+Build_metrics_table_rslt_tbl(euchre_test_predictions, 'euchre_turn_down.knn', 'knn_bid')
+Build_metrics_table_rslt_tbl(euchre_test_predictions, 'euchre_turn_down.da', 'da_bid')
+Build_metrics_table_rslt_tbl(euchre_test_predictions, 'euchre_turn_down.Ensemble', 'top_bid')
+
+euchre_turn_down_model_performance = bind_rows(euchre_turn_down.Intuition_stats,
+                                             euchre_turn_down.2lm_stats,
+                                             euchre_turn_down.orm_stats,
+                                             euchre_turn_down.multinom_stats,
+                                             euchre_turn_down.tree_stats,
+                                             euchre_turn_down.rf_stats,
+                                             euchre_turn_down.knn_stats,
+                                             euchre_turn_down.da_stats,
+                                             euchre_turn_down.Ensemble_stats)
+
+euchre_turn_down_model_performance %>%
+  kbl() %>%
+  kable_styling()
+
+```
+
+From a glance, it is obvious that every single model above has drastic improvement over the default personal method of bidding trump. The practical tree model that can be used in a real-life Euchre game has the worst accuracy out of all the models, but even that still performs way better than the default method. 
+
+The ensemble model that combines all 7 models performs well, but does not stand out. In comparison to each individual model, it has the 3rd best lost cost score, is tied for the 2nd best accuracy, and has the 2nd best F1 score. 
+
+The ordinal regression, multinomial regression, and 2-step logistic regression models all perform the best, although they are not very interpretative. Any of these models can be integrated in a Euchre computer application to decide if, what, and how to bid trump. 
+
+\
+
+## Model testing on new data
+
+For this next test, a new Euchre dataset will be used to assess the performance of the selected models on new, unseen data. Since this data is likely similar and probably has some matching observations to the training data, the model that performs the best on the training data will be used. The tree model will also be used because it is interpretive. 
+
+When comparing the model performances on the new test data, there will be 3 methods tested. 
+
+1. The personal method (as a baseline)
+
+2. The decision tree model (it is interpretive and can be used in real-life Euchre games)
+
+3. The orm model (out of the 7 individual models, it has the highest F1 score and the best loss cost. It is also simpler to use.) 
+
+\
+
+### Read in new validation data with 50,000 generated hands to test selected models on unseen data
+
+```{r}
+new_euchre_turn_down = read.csv('euchre_make_trump_stats_test.csv')
+```
+
+#### Prepare and modify target and predictor variables
+
+```{r}
+new_euchre_turn_down$predicted_call = replace(new_euchre_turn_down$predicted_call, new_euchre_turn_down$predicted_call == "Pass", 0)
+new_euchre_turn_down$predicted_call = replace(new_euchre_turn_down$predicted_call, new_euchre_turn_down$predicted_call == "Order Trump", 1)
+new_euchre_turn_down$predicted_call = replace(new_euchre_turn_down$predicted_call, new_euchre_turn_down$predicted_call == "Order Trump Alone", 2)
+new_euchre_turn_down$correct_call = replace(new_euchre_turn_down$correct_call, new_euchre_turn_down$correct_call == "Pass", 0)
+new_euchre_turn_down$correct_call = replace(new_euchre_turn_down$correct_call, new_euchre_turn_down$correct_call == "Order Trump", 1)
+new_euchre_turn_down$correct_call = replace(new_euchre_turn_down$correct_call, new_euchre_turn_down$correct_call == "Order Trump Alone", 2)
+
+new_euchre_turn_down$predicted_call = as.factor(new_euchre_turn_down$predicted_call)
+new_euchre_turn_down$correct_call = as.factor(new_euchre_turn_down$correct_call)
+```
+
+#### Preprocess the data the same way the training data was
+
+```{r}
+# Convert characters to factors
+new_euchre_turn_down$Broad_Start_Order = factor(new_euchre_turn_down$Broad_Start_Order, levels = c('First', 'Middle', 'Last'))
+```
+
+
+#### Remove variables that were not used at all in model building
+
+```{r}
+keep_variables = names(euchre_turn_down)
+new_euchre_turn_down = new_euchre_turn_down %>%
+  select(all_of(keep_variables))
+```
+
+\
+
+### Predict the target variable classes using the two selected models
+
+```{r, warning=FALSE}
+# tree
+new_euchre_turn_down$tree_pred = predict(euchre_turn_down.tree, newdata = new_euchre_turn_down, type = 'class')
+
+# ordinal
+new_euchre_turn_down$orm_pred = predict(euchre_turn_down.orm, newdata = new_euchre_turn_down, type = 'lp')
+new_euchre_turn_down = new_euchre_turn_down %>%
+  mutate(orm_pred = case_when(orm_pred<=cutoff_1~0, orm_pred<=cutoff_2~1, TRUE~2))
+```
+
+\
+
+### Evaluate the performances of the 3 classification methods on the new data
+
+```{r}
+Build_metrics_table_rslt_tbl(new_euchre_turn_down, 'euchre_turn_down.Intuition_test', 'predicted_call')
+Build_metrics_table_rslt_tbl(new_euchre_turn_down, 'euchre_turn_down.tree_test', 'tree_pred')
+Build_metrics_table_rslt_tbl(new_euchre_turn_down, 'euchre_turn_down.orm_test', 'orm_pred')
+
+euchre_turn_down_validation_stats = bind_rows(euchre_turn_down.Intuition_test_stats,
+                                            euchre_turn_down.tree_test_stats,
+                                            euchre_turn_down.orm_test_stats)
+euchre_turn_down_validation_stats %>%
+  kbl() %>%
+  kable_styling()
+```
+
+The ordinal regression model yields the best results, whereas the tree lags a little behind. However, the tree still does way better than the personal method. This means that I can win more Euchre games if I make bids using the tree model, instead of my own bidding method. This also means that a computer that makes bids using the ordinal regression model will be very difficult to beat if it gets half-decent cards. 
+
+\
+
+## Bidding on a Non-Turned Up Suit Conclusion
+
+Because the new data is similar to the training data, it makes sense that the model results are all similar. Since the data here will not be vastly different compared to what is seen in a real-life Euchre game, it can be concluded that these results are valid. Therefore, these machine learning models are able to be applied in Euchre games.
+
+From this research, it has been determined that machine learning can be used to improve the 2nd part of the bidding process of a Euchre game. This is both at a practical level and at a more complex level. Furthermore, it is shown that making a bid on the best suit in hand relies on a lot of variables, but mainly these 6: the count of trump cards, the strongest card value in hand, the count of distinct non-trump suits in hand, the count of non-trump aces, whether the Right Bower is present in hand, and the order in which a player will be starting the trick-taking round.   
+
+\
+
+```{r, echo = FALSE}
+objects = ls()
+keep_objects = objects[str_detect(objects, 'turn_up|turn_down')]
+rm(list = ls()[!(ls() %in% keep_objects)])
+```
+
