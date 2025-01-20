@@ -7,12 +7,15 @@ A nine (weakest rank) of the trump suit is more powerful than the ace
 the goal is for their team to win the majority of 5 tricks.
 
 When deciding to bid trump, there is no straightforward process for
-doing so. Therefore, this project will determine what factors contribute
+doing so. Therefore, this project determines what factors contribute
 to creating a good hand that is worthy to bid on. Since there are no
 datasets online that will achieve this goal, 300,000 Euchre rounds were
 simulated Monte Carlo style. Information about the hand and the call
 that should have been made based on the results have been recorded.
-Multiclass machine learning algorithms will be used to determine if 
+Multiclass machine learning algorithms get used to determine if 
 a suit in hand should be passed on, bid trump, or be bid and played alone.
 
-Check out this [interactive app](https://samueljhinnenkamp.shinyapps.io/Euchre_App/) that uses the best created models to make suggestions in real-time. 
+Check out this [document](https://rpubs.com/samueljhinnenkamp/MakingEuchreBidsWithMachineLearning) that dives into the modeling techniques used to best determine the best decisions to make on different simulated Euchre hands. 
+
+Check out this [interactive app](https://samueljhinnenkamp.shinyapps.io/Euchre_App/) that uses the best created models from the above document to make suggestions in real-time. 
+
