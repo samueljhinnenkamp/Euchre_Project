@@ -14,3 +14,5 @@ simulated Monte Carlo style. Information about the hand and the call
 that should have been made based on the results have been recorded.
 Multiclass machine learning algorithms will be used to determine if 
 a suit in hand should be passed on, bid trump, or be bid and played alone.
+
+Check out this [interactive app](https://samueljhinnenkamp.shinyapps.io/Euchre_App/) that uses the best created models to make suggestions in real-time. 
