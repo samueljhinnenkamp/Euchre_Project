@@ -22,7 +22,7 @@ or be bid and played alone.
 
 # Additional Resources
 
-Check out this [document](https://rpubs.com/samueljhinnenkamp/MakingEuchreBidsWithMachineLearning) that dives into the modeling techniques used to determine the best decisions to make on different simulated Euchre hands. 
+Check out this [document](https://rpubs.com/samueljhinnenkamp/MakingEuchreBidsWithMachineLearning) that dives into the modeling techniques used to determine the best decisions to make on many different simulated Euchre hands. 
 
 Check out this [interactive app](https://samueljhinnenkamp.shinyapps.io/Euchre_App/) that uses the best created models from the above document to generate suggestions in real-time, using inputted round information. 
 
