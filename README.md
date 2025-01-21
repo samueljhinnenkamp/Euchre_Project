@@ -18,7 +18,7 @@ A wide variety of different multiclass machine learning algorithms are
 tested to determine if a suit in hand should be passed on, bid trump, 
 or be bid and played alone.
 
-**The goals of this project are to determine how aggressive one should be when bidding trump, and if machine learning is useful in the Euchre bidding process.**
+**The goals of this project are to determine how aggressive one should be when bidding trump, and if machine learning is useful in the Euchre bidding process.** 
 
 # Additional Resources
 
